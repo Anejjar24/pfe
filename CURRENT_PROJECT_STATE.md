@@ -8,7 +8,7 @@ AquaFlow is currently an Argon Dashboard React frontend plus a NestJS backend th
 
 The project is not a blank scaffold. It contains real backend modules for database persistence, JWT auth, RBAC guards, realtime Socket.IO infrastructure, MQTT client setup, station/sensor/alert/maintenance CRUD, and an in-memory flow execution module. The frontend contains Redux Toolkit state, auth screens, protected admin routes, station management, monitoring, alerts, maintenance, dashboard widgets, API services, and Socket.IO client integration.
 
-The biggest gap is that the roadmap's later modules are absent: analytics, reports, GIS map, IoT device management UI, notifications, industrial workflow blocks/handlers, persistent workflow management, testing, and production deployment hardening. Several implemented pieces are also only partially integrated, especially MQTT ingestion, realtime auth, workflow persistence, and dashboard data sourcing.
+The biggest gap is that the roadmap's later modules are absent: analytics, reports, GIS map, IoT device management UI, notifications, industrial workflow blocks/handlers, persistent workflow management, testing, and production deployment hardening. Several implemented pieces are also still partial, especially workflow persistence and production migration/deployment hardening.
 
 ## Documentation Compared
 
@@ -100,11 +100,11 @@ Missing planned modules:
 
 | Module | State | Notes |
 |---|---|---|
-| Database | Partial/strong Phase 1 | TypeORM configured for PostgreSQL with core entities and synchronize enabled outside production. No migrations are present. |
-| Auth | Partial/strong Phase 1 | Register, login, me, logout exist. JWT strategy and password hashing exist. Refresh token endpoint is missing. |
-| RBAC | Partial | `JwtGuard`, `RolesGuard`, and `Roles` decorator exist and are applied to CRUD modules. Role coverage is basic. |
-| Realtime | Partial | Socket.IO gateway and service exist. Subscribe/unsubscribe/ping events exist. Broadcast methods exist. No server-side JWT socket validation. |
-| IoT/MQTT | Partial | MQTT client connects and subscribes to sensor/device topics. Actual incoming MQTT messages are parsed only in the client and are not delegated to `IotService`. |
+| Database | Partial/strong Phase 1 | TypeORM configured for PostgreSQL with core entities and synchronize enabled outside production. Migration status is documented, but no initial migration is generated yet. |
+| Auth | Partial/strong Phase 1 | Register, login, me, logout, and refresh token endpoint exist. JWT strategy and password hashing exist. Refresh tokens are JWT-based and not yet persisted/rotated. |
+| RBAC | Partial | `JwtGuard`, `RolesGuard`, and `Roles` decorator exist and are applied to CRUD modules. Frontend now hides several privileged station/sensor/alert actions by role. |
+| Realtime | Partial | Socket.IO gateway and service exist. Subscribe/unsubscribe/ping events exist. Broadcast methods exist. Socket connections now validate JWT tokens from handshake auth. |
+| IoT/MQTT | Partial | MQTT client connects, subscribes, parses `sensors/{sensorId}/data`, delegates valid numeric readings to `IotService`, and threshold violations create persistent alerts. |
 | Stations | Partial/usable | CRUD controller/service/DTOs exist, protected with JWT/RBAC. Includes pagination/filtering. |
 | Sensors | Partial/usable | CRUD plus `GET /sensors/:id/data` exists. Sensor data model exists. |
 | Alerts | Partial/usable | List, detail, create, acknowledge, resolve exist. Delete/clear endpoint from docs is absent. |
@@ -373,10 +373,10 @@ Completed:
 
 Partial:
 
-- Refresh token endpoint missing.
-- Migrations missing.
-- MQTT ingestion not wired through `IotService`.
-- Socket token validation missing.
+- Refresh token endpoint exists, but refresh-token persistence/rotation is still missing.
+- Initial TypeORM migration is not generated; migration status is documented in `pfe-backend/src/database/migrations/README.md`.
+- MQTT ingestion is wired for `sensors/{sensorId}/data`.
+- Socket token validation is implemented.
 - No formal automated tests.
 
 ### Phase 2: Feature Modules
@@ -385,7 +385,7 @@ Partially complete.
 
 Completed/usable:
 
-- Dashboard page/widgets.
+- Dashboard page/widgets now derive KPI, station overview, and active alert feed from real station/sensor/alert API data.
 - Station management list/create/edit UI.
 - Monitoring sensor list/create UI.
 - Alerts list/acknowledge/resolve UI.
@@ -427,7 +427,7 @@ No analytics module, reports module, notifications module, IoT management UI, ca
 
 - API naming mismatch: documents describe `/workflows`, code uses `/flows`.
 - HTTP method mismatch: documents describe some `PUT` routes; code mostly uses `PATCH`.
-- Auth roadmap includes refresh token; code has no refresh endpoint.
+- Auth refresh endpoint now exists at `POST /api/auth/refresh`, but refresh-token rotation/persistence remains future hardening.
 - Frontend API default is `http://localhost:3001/api`, while some docs mention backend `3000`.
 - Socket URL defaults to `http://localhost:3001`, matching backend but not the docs' separate Socket port model.
 - MQTT client and IoT service are not fully connected.
@@ -453,5 +453,5 @@ No analytics module, reports module, notifications module, IoT management UI, ca
 - Backend type-check: `npx.cmd tsc --noEmit` succeeded.
 - Frontend production build: `npm.cmd run build` succeeded with warnings:
   - unused imports in `src/components/Headers/Header.js`
-  - unused `BuilderPage` import in `src/routes.js`
-
+- Authenticated API verification succeeded for login, refresh, stations, sensors, alerts, and maintenance seeded data.
+- Browser automation opened the login page, but could not type into the `type="email"` field due to the in-app browser automation layer; UI data verification was completed through authenticated API/build checks.

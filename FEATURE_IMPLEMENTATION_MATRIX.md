@@ -15,15 +15,15 @@ Status values:
 | NestJS backend shell | `AppModule`, `main.ts`, ConfigModule, global API prefix | N/A | `/api` prefix | N/A | N/A | COMPLETE |
 | React frontend shell | N/A | CRA/Argon Dashboard app with layouts/routes | N/A | Admin/Auth layouts | N/A | COMPLETE |
 | Database configuration | TypeORM Postgres configured | N/A | Repository injection works | N/A | N/A | PARTIAL |
-| Database migrations | Migration path configured | N/A | N/A | N/A | N/A | MISSING |
+| Database migrations | Migration path configured and migration status documented | N/A | N/A | N/A | N/A | PARTIAL |
 | Core entities | User, Station, Sensor, SensorData, Alert, Maintenance, Workflow, WorkflowExecution, Notification | N/A | N/A | N/A | N/A | COMPLETE |
 | User authentication | Auth service/controller, JWT strategy, bcrypt | Auth pages, auth slice, ProtectedRoute | login/register/me/logout | Login/Register | Token passed to socket client | PARTIAL |
-| Refresh tokens | No endpoint/service | Client references refresh token but redirects instead | Missing `/auth/refresh` | N/A | N/A | MISSING |
-| RBAC | JwtGuard, RolesGuard, Roles decorator | ProtectedRoute only checks auth | Applied to CRUD modules | No role-based UI gating found | N/A | PARTIAL |
+| Refresh tokens | JWT refresh endpoint/service exists | Axios interceptor retries 401 through refresh endpoint | `POST /auth/refresh` | N/A | N/A | PARTIAL |
+| RBAC | JwtGuard, RolesGuard, Roles decorator | ProtectedRoute checks auth; selected actions hidden by role | Applied to CRUD modules | Station/sensor/alert actions role-gated | N/A | PARTIAL |
 | API client | N/A | Axios client with bearer interceptor | Calls backend `/api` | N/A | N/A | PARTIAL |
 | Redux store | N/A | auth, dashboard, realtime, stations, sensors, alerts, maintenance slices | N/A | Used by current pages | Realtime slice exists | PARTIAL |
 | UI slice/theme | N/A | No `uiSlice` found | N/A | Existing Argon styles | N/A | MISSING |
-| Dashboard | No dedicated dashboard API | DashboardPage and KPI/alert/station/realtime widgets | Uses Redux/current data | Present | Socket hook subscribed | PARTIAL |
+| Dashboard | Uses existing stations/sensors/alerts APIs | Dashboard derives KPIs, station overview, and alert feed from real API data | Reuses CRUD APIs | Present | Socket hook subscribed | PARTIAL |
 | Station CRUD | Stations module/service/controller/DTOs | Stations page with list/filter/create/edit | GET/POST/PATCH/DELETE | List and modal form | Station status event listener only | PARTIAL |
 | Station details | Backend detail endpoint exists | No detail page found | GET `/stations/:id` | Missing | N/A | PARTIAL |
 | Station analytics | No backend endpoint | No station analytics page | Missing | Missing | Missing | MISSING |
@@ -35,10 +35,10 @@ Status values:
 | Maintenance | Maintenance module/service/controller/DTOs | Maintenance page list only | GET/POST/PATCH/DELETE | List | No realtime maintenance listener | PARTIAL |
 | Technician assignment | No dedicated assign endpoint | No assignment page | Missing `/maintenance/:id/assign` | Missing | Missing | MISSING |
 | WebSocket gateway | Gateway/service exists | `useSocket` exists | Socket.IO events | Used in dashboard/monitoring | Present | PARTIAL |
-| Socket authentication | Token sent by frontend | Token sent in `auth` | No server validation found | N/A | Unvalidated | PARTIAL |
+| Socket authentication | Gateway validates JWT from handshake auth | Token sent in `auth` | N/A | N/A | Validated on connection | PARTIAL |
 | MQTT client | Connects/subscribes/publishes | N/A | No HTTP API | N/A | Not fully bridged | PARTIAL |
-| MQTT ingestion to DB | `IotService` can process sensor data | N/A | N/A | N/A | Can broadcast if called | BROKEN |
-| Threshold alert creation | Threshold check in IoT service | Frontend listens to alerts | No persistent alert creation from MQTT | Alert UI exists | Emits `threshold-alert`, frontend not listening | PARTIAL |
+| MQTT ingestion to DB | MQTT client delegates valid sensor data to `IotService` | N/A | N/A | N/A | Broadcasts sensor updates | PARTIAL |
+| Threshold alert creation | Threshold violations create persistent alerts through `AlertsService` | Frontend listens to alerts | Alert records available through `/alerts` | Alert UI exists | Emits `alert-created` | PARTIAL |
 | Workflow builder UI | Existing builder components/registry/engine | Builder components exist | Save/execute service exists | Route inconsistent | N/A | PARTIAL |
 | Workflow route integration | `/flows` backend exists | `/admin/builder` renders `Test`, not imported `BuilderPage` | `/flows` endpoints | Inconsistent | N/A | BROKEN |
 | Workflow persistence | Workflow entities exist | Save service exists | `/flows` stores in memory | N/A | N/A | BROKEN |
@@ -61,4 +61,3 @@ Status values:
 | Lint cleanliness | N/A | Build reports unused imports | N/A | N/A | N/A | PARTIAL |
 | Environment examples | Docs include templates | No `.env.example` observed in scanned file list | N/A | N/A | N/A | MISSING |
 | Production observability | Logger usage only | N/A | No health/metrics | N/A | No metrics | MISSING |
-

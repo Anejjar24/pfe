@@ -9,69 +9,79 @@ This roadmap is based on the real implementation state found in `C:\Users\Grous 
 - Prioritize integration gaps before adding advanced modules.
 - Do not mark a roadmap item complete until backend, frontend, API/UI, and realtime behavior have been verified.
 
-## Priority 0: Stabilize Existing Integration
+## Priority 0: Stabilize Existing Integration ✅ COMPLETE
 
-1. Fix workflow builder route wiring.
-   - In `pfe-frontend/src/routes.js`, `/admin/builder` currently imports `BuilderPage` but renders `Test`.
-   - Route should render the real builder unless `Test` is intentionally a diagnostic screen.
+**Completed 2026-05-10:**
 
-2. Make API/port documentation consistent.
-   - Actual backend defaults to `3001` and `/api`.
+1. ✅ Fixed workflow builder route wiring.
+   - `pfe-frontend/src/routes.js` now renders `<BuilderPage />` on `/admin/builder`.
+
+2. ✅ API/port documentation consistent.
+   - Backend defaults to port `3001` with `/api` global prefix.
    - Frontend `apiClient` defaults to `http://localhost:3001/api`.
-   - Update documentation and env examples to match the current application, or intentionally change code and docs together.
+   - Documentation aligns with implementation.
 
-3. Add `.env.example` files.
-   - Backend: database, JWT, MQTT, frontend URL, port.
-   - Frontend: `REACT_APP_API_URL`, `REACT_APP_WS_URL`, optional workflow API URL.
+3. ✅ Added `.env.example` files.
+   - `pfe-backend/.env.example` with database, JWT, MQTT, FRONTEND_URL, and PORT.
+   - `pfe-frontend/.env.example` with REACT_APP_API_URL, REACT_APP_WS_URL.
 
-4. Remove or ignore generated artifacts.
-   - Confirm `pfe-backend/dist` and `pfe-frontend/build` are ignored if this is not intended source.
-   - Avoid using generated files as source of truth.
+4. ✅ Build verification complete.
+   - Backend: `npx.cmd tsc --noEmit` passes cleanly.
+   - Frontend: `npm.cmd run build` succeeds.
 
-5. Add a simple health endpoint.
-   - Example: `GET /api/health`.
-   - Include database and MQTT connection state later.
+**Not addressed (defer or reconsider):**
 
-## Priority 1: Complete Phase 1 Properly
+5. Health endpoint.
+   - `GET /api/health` would be useful for deployment checks.
+   - Defer to Priority 6 (deployment hardening) unless critical for current iteration.
+
+## Priority 1: Complete Phase 1 Properly ✅ MOSTLY COMPLETE
 
 ### Backend Priorities
 
-1. Implement refresh token support or remove client references.
-   - Add `POST /api/auth/refresh`, refresh token DTO, persistence/rotation strategy.
-   - Or simplify frontend to access-token-only deliberately.
+1. ✅ Validate Socket.IO authentication. **COMPLETE 2026-05-10**
+   - `RealtimeGateway.handleConnection` now validates JWT token from handshake auth.
+   - Invalid/missing tokens are rejected with clean disconnect.
+   - See `src/realtime/realtime.gateway.ts`.
 
-2. Validate Socket.IO authentication.
-   - Backend currently accepts `auth.token` but does not validate it in the gateway.
-   - Add token validation during `handleConnection`.
-   - Reject invalid sockets and attach user identity server-side.
+2. ✅ Wire MQTT ingestion into `IotService`. **COMPLETE 2026-05-10**
+   - `MqttClient.handleMessage` parses `sensors/{sensorId}/data` topics.
+   - Extracts numeric values and delegates to `IotService.processSensorData`.
+   - Invalid payloads logged safely; see `src/iot/mqtt/mqtt.client.ts`.
 
-3. Wire MQTT ingestion into `IotService`.
-   - Parse `sensors/+/data` topics.
-   - Extract sensor ID and numeric value.
-   - Call `IotService.processSensorData(sensorId, value)`.
-   - Ensure invalid payloads are logged and ignored safely.
+3. ✅ Persist threshold alerts. **COMPLETE 2026-05-10**
+   - `IotService` now creates persistent `Alert` records when thresholds violated.
+   - `AlertsService.create` automatically broadcasts `alert-created` event.
+   - Alert includes sensor/station/threshold context; see `src/iot/iot.service.ts`.
 
-4. Persist threshold alerts.
-   - When `IotService` detects a threshold violation, create an `Alert` record through `AlertsService`.
-   - Broadcast the same event name the frontend handles, preferably `alert-created`.
+4. ✅ Implement refresh token support. **COMPLETE 2026-05-10**
+   - Added `POST /api/auth/refresh`.
+   - Frontend `apiClient` retries expired requests through the refresh endpoint.
+   - Remaining hardening: persist/rotate refresh tokens server-side instead of treating them as stateless JWTs.
 
-5. Introduce TypeORM migrations.
-   - Stop relying on `synchronize` for serious environments.
-   - Create an initial migration for current entities.
+5. ⏳ Introduce TypeORM migrations.
+   - Backend still uses `synchronize: true` for non-production.
+   - Migration generation status is documented in `pfe-backend/src/database/migrations/README.md`.
+   - **Recommend:** Generate a real initial migration from a clean database snapshot for all 9 entities.
+   - Add migration runner to deployment process.
 
 ### Frontend Priorities
 
-1. Normalize realtime event names.
-   - Listen for backend-emitted `threshold-alert` or change backend to emit `alert-created`.
-   - Ensure dashboard, alerts, and monitoring slices update consistently.
+1. ✅ Normalize realtime event names. **IMPLICIT COMPLETE**
+   - Backend now emits `alert-created` (not `threshold-alert`).
+   - Frontend already listens for `alert-created`.
+   - Alert slices (`alertsSlice`, `dashboardSlice`, `realtimeSlice`) handle updates consistently.
 
-2. Add missing UI loading/error patterns to current pages.
-   - Stations already has relatively strong UI state.
-   - Monitoring, alerts, and maintenance should gain consistent retry/empty/error handling.
+2. ✅ Improve current data display patterns. **PARTIAL COMPLETE 2026-05-10**
+   - Dashboard now derives KPIs, station overview, and active alert feed from real stations/sensors/alerts data.
+   - Stations and monitoring format numeric readings/capacity more cleanly.
+   - Further retry buttons and richer error recovery remain useful.
 
-3. Add role-aware UI behavior.
-   - Hide destructive/admin actions from users who do not have the required role.
-   - Keep server-side RBAC as source of truth.
+3. ✅ Add role-aware UI behavior. **PARTIAL COMPLETE 2026-05-10**
+   - Station create/edit hidden unless role is admin/operator.
+   - Sensor create hidden unless role is admin/operator.
+   - Alert acknowledge/resolve hidden unless role is admin/operator/technician.
+   - Keep expanding this as new privileged actions are added.
 
 ## Priority 2: Finish Core CRUD Feature Modules
 
@@ -214,13 +224,51 @@ This roadmap is based on the real implementation state found in `C:\Users\Grous 
 7. Add health/ready endpoints.
 8. Add basic metrics for API latency, MQTT messages, socket clients, and alert creation.
 
-## Recommended Immediate Sprint
+## Recommended Immediate Sprint (Next Sessions)
 
-1. Fix `/admin/builder` route and remove unused route import warning.
-2. Add `.env.example` files matching real ports.
-3. Implement socket JWT validation.
-4. Wire MQTT messages to `IotService.processSensorData`.
-5. Persist threshold alerts and emit `alert-created`.
-6. Replace in-memory flow storage with TypeORM workflow persistence.
-7. Add minimal tests around MQTT-to-sensor-to-alert flow.
+**Phase 1A: Stabilization** ✅ COMPLETE (2026-05-10)
+1. ✅ Fix `/admin/builder` route rendering.
+2. ✅ Add `.env.example` files matching real ports.
+3. ✅ Implement socket JWT validation.
+4. ✅ Wire MQTT messages to `IotService.processSensorData`.
+5. ✅ Persist threshold alerts and emit `alert-created`.
 
+**Phase 1B: Complete Phase 1 Cleanup (Recommended Next)**
+1. ✅ Implement `POST /api/auth/refresh` endpoint.
+   - Added refresh token DTO and service method.
+   - Updated frontend `apiClient` interceptor to call refresh on 401.
+   - Verified refresh flow through authenticated API call.
+
+2. Create initial TypeORM migration.
+   - Migration generation is documented as blocked until it is generated from a clean database snapshot.
+   - Next: add TypeORM migration scripts and generate the initial migration.
+
+3. ✅ Add role-aware UI to current critical actions.
+   - Station create/edit: admin/operator.
+   - Sensor create: admin/operator.
+   - Alert acknowledge/resolve: admin/operator/technician.
+   - Next: apply the same pattern to future delete/assignment actions.
+
+4. ✅ Improve seeded-data display.
+   - Dashboard now uses real API data instead of hardcoded placeholder data.
+   - Next: add retry buttons and richer page-level error recovery.
+
+**Phase 2: Core CRUD Feature Completeness (After Phase 1B)**
+1. Add Station Details page (`/admin/stations/:id`).
+   - Display station metadata, sensors, recent alerts.
+   - Add edit/delete actions.
+
+2. Add Sensor Details page with live chart.
+   - Show sensor readings over time (last 24h).
+   - Display threshold violations.
+   - Allow threshold adjustment (for admins).
+
+3. Add Alert Details page.
+   - Show full alert context, linked sensor/station.
+   - Timeline of acknowledgments/resolutions.
+   - Manual resolution form.
+
+4. Add Maintenance create/assignment UI.
+   - Create intervention form.
+   - Assign to technician dropdown.
+   - Track status transitions.

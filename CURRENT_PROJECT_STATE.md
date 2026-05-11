@@ -1,5 +1,414 @@
 # AquaFlow Current Project State Audit
 
+# AquaFlow — Current Project State (Full Audit)
+
+**Audit date:** 2026-05-10
+**Audited by:** Senior Software Architect (AI-assisted code scan)
+**Workspace:** `pfe/` (extracted from `pfe1.rar`)
+**Application code:** `pfe-backend` (NestJS 10), `pfe-frontend` (React 18, CRA, Argon Dashboard + JointJS workflow builder)
+
+---
+
+## Executive Summary
+
+AquaFlow is **~55% implemented** relative to the four-phase roadmap defined in `IMPLEMENTATION_ROADMAP.md`.
+
+**Phase 1 (Core Infrastructure):** ✅ **Largely complete** — PostgreSQL/TypeORM, JWT auth with refresh tokens, RBAC guards, Socket.IO gateway with JWT handshake, MQTT client, Redux Toolkit with 7 slices, Axios API client with refresh interceptor.
+
+**Phase 2 (CRUD Modules & Pages):** ⚠️ **Partially complete** — Dashboard, Stations, Monitoring, Maintenance pages exist with REST integration and real-time hooks. Alerts page is **empty** (0 bytes). Create/Edit forms exist for Stations and Sensors only. No delete UI. No station-details or sensor-details page.
+
+**Phase 3 (Workflow Extensions):** ❌ **Mostly missing** — The original workflow builder (JointJS, block registry, execution engine) is preserved and functional. However, industrial blocks (sensor-read, threshold-check, pump-control, etc.) defined in the roadmap are **not added** to `blocks.js`. Workflow persistence is **in-memory only** (`Map`); the `Workflow` TypeORM entity exists but is never used by `FlowsService`. `WorkflowExecution` entity is also unused.
+
+**Phase 4 (Analytics, GIS, Reporting):** ❌ **Absent** — No analytics dashboard, no GIS map view, no export system, no reporting module, no email/SMS notifications, no predictive maintenance.
+
+---
+
+## Architecture Summary (As Implemented)
+
+### Backend (`pfe-backend`)
+
+
+| Aspect      | Detail                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| Framework   | NestJS 10, TypeScript, strict mode                                                                   |
+| Entry point | `main.ts` — global prefix `api`, port 3001, CORS from `FRONTEND_URL`, global `ValidationPipe`       |
+| Database    | TypeORM + PostgreSQL 15 (Docker),`synchronize: false` in config                                      |
+| Auth        | JWT access token (1h) + refresh token (7d), bcrypt hashing                                           |
+| Realtime    | Socket.IO gateway with JWT validation on connect                                                     |
+| IoT         | MQTT client (mqtt package), subscribes to`sensors/+/data`, `sensors/+/status`, `devices/+/heartbeat` |
+| API prefix  | All routes under`/api/`                                                                              |
+
+**Registered NestJS Modules:**
+
+
+| Module            | File                                    | Status                            |
+| ----------------- | --------------------------------------- | --------------------------------- |
+| DatabaseModule    | `src/database/database.module.ts`       | ✅ Implemented                    |
+| AuthModule        | `src/auth/auth.module.ts`               | ✅ Implemented                    |
+| RealtimeModule    | `src/realtime/realtime.module.ts`       | ✅ Implemented                    |
+| IotModule         | `src/iot/iot.module.ts`                 | ✅ Implemented                    |
+| StationsModule    | `src/stations/stations.module.ts`       | ✅ Implemented                    |
+| SensorsModule     | `src/sensors/sensors.module.ts`         | ✅ Implemented                    |
+| AlertsModule      | `src/alerts/alerts.module.ts`           | ✅ Implemented                    |
+| MaintenanceModule | `src/maintenance/maintenance.module.ts` | ✅ Implemented                    |
+| FlowsModule       | `src/flows/flows.module.ts`             | ⚠️ Implemented (in-memory only) |
+
+**Missing modules per roadmap:**
+
+- `AnalyticsModule` — absent
+- `ReportsModule` — absent
+- `NotificationsModule` — absent (entity exists, module does not)
+- `UsersModule` (admin user management) — absent
+
+---
+
+### Backend — Implemented APIs
+
+**Auth (`/api/auth`)**
+
+
+| Method | Route                | Guard    | Status |
+| ------ | -------------------- | -------- | ------ |
+| POST   | `/api/auth/register` | Public   | ✅     |
+| POST   | `/api/auth/login`    | Public   | ✅     |
+| POST   | `/api/auth/refresh`  | Public   | ✅     |
+| POST   | `/api/auth/logout`   | JwtGuard | ✅     |
+| GET    | `/api/auth/me`       | JwtGuard | ✅     |
+
+**Stations (`/api/stations`)**
+
+
+| Method | Route               | Guard                     | Status |
+| ------ | ------------------- | ------------------------- | ------ |
+| GET    | `/api/stations`     | JwtGuard                  | ✅     |
+| POST   | `/api/stations`     | JwtGuard + Admin/Operator | ✅     |
+| GET    | `/api/stations/:id` | JwtGuard                  | ✅     |
+| PATCH  | `/api/stations/:id` | JwtGuard + Admin/Operator | ✅     |
+| DELETE | `/api/stations/:id` | JwtGuard + Admin          | ✅     |
+
+**Sensors (`/api/sensors`)**
+
+
+| Method | Route                   | Guard                     | Status |
+| ------ | ----------------------- | ------------------------- | ------ |
+| GET    | `/api/sensors`          | JwtGuard                  | ✅     |
+| POST   | `/api/sensors`          | JwtGuard + Admin/Operator | ✅     |
+| GET    | `/api/sensors/:id`      | JwtGuard                  | ✅     |
+| GET    | `/api/sensors/:id/data` | JwtGuard                  | ✅     |
+| PATCH  | `/api/sensors/:id`      | JwtGuard + Admin/Operator | ✅     |
+| DELETE | `/api/sensors/:id`      | JwtGuard + Admin          | ✅     |
+
+**Alerts (`/api/alerts`)**
+
+
+| Method | Route                         | Guard    | Status |
+| ------ | ----------------------------- | -------- | ------ |
+| GET    | `/api/alerts`                 | JwtGuard | ✅     |
+| POST   | `/api/alerts`                 | JwtGuard | ✅     |
+| GET    | `/api/alerts/:id`             | JwtGuard | ✅     |
+| PATCH  | `/api/alerts/:id/acknowledge` | JwtGuard | ✅     |
+| PATCH  | `/api/alerts/:id/resolve`     | JwtGuard | ✅     |
+
+**Maintenance (`/api/maintenance`)**
+
+
+| Method | Route                  | Guard                                | Status |
+| ------ | ---------------------- | ------------------------------------ | ------ |
+| GET    | `/api/maintenance`     | JwtGuard                             | ✅     |
+| POST   | `/api/maintenance`     | JwtGuard + Admin/Operator/Technician | ✅     |
+| GET    | `/api/maintenance/:id` | JwtGuard                             | ✅     |
+| PATCH  | `/api/maintenance/:id` | JwtGuard                             | ✅     |
+| DELETE | `/api/maintenance/:id` | JwtGuard + Admin                     | ✅     |
+
+**Flows (`/api/flows`)** ⚠️
+
+
+| Method | Route                    | Guard             | Status             |
+| ------ | ------------------------ | ----------------- | ------------------ |
+| GET    | `/api/flows`             | **None (public)** | ⚠️ No auth guard |
+| POST   | `/api/flows`             | **None (public)** | ⚠️ No auth guard |
+| GET    | `/api/flows/:id`         | **None (public)** | ⚠️ No auth guard |
+| PUT    | `/api/flows/:id`         | **None (public)** | ⚠️ No auth guard |
+| DELETE | `/api/flows/:id`         | **None (public)** | ⚠️ No auth guard |
+| POST   | `/api/flows/:id/execute` | **None (public)** | ⚠️ No auth guard |
+
+**Missing APIs per roadmap:**
+
+- `GET /api/analytics/overview` — absent
+- `GET /api/analytics/stations/:id` — absent
+- `GET /api/sensors/:id/statistics` — absent
+- `GET /api/reports` — absent
+- `GET /api/users` (admin management) — absent
+- `POST /api/notifications` — absent
+
+---
+
+### Backend — Database Entities
+
+
+| Entity            | File                                            | DB Table              | Status                                            |
+| ----------------- | ----------------------------------------------- | --------------------- | ------------------------------------------------- |
+| User              | `database/entities/User.entity.ts`              | `users`               | ✅ Full                                           |
+| Station           | `database/entities/Station.entity.ts`           | `stations`            | ✅ Full                                           |
+| Sensor            | `database/entities/Sensor.entity.ts`            | `sensors`             | ✅ Full                                           |
+| SensorData        | `database/entities/SensorData.entity.ts`        | `sensor_data`         | ✅ Full                                           |
+| Alert             | `database/entities/Alert.entity.ts`             | `alerts`              | ✅ Full                                           |
+| Maintenance       | `database/entities/Maintenance.entity.ts`       | `maintenance`         | ✅ Full                                           |
+| Workflow          | `database/entities/Workflow.entity.ts`          | `workflows`           | ⚠️ Entity defined, never used by FlowsService   |
+| WorkflowExecution | `database/entities/WorkflowExecution.entity.ts` | `workflow_executions` | ⚠️ Entity defined, never used                   |
+| Notification      | `database/entities/Notification.entity.ts`      | `notifications`       | ⚠️ Entity defined, no module/service/controller |
+
+**Migrations:** `database/migrations/` directory exists but contains only a `README.md`. No actual migration files authored. Production deployment requires TypeORM migrations to be generated and run.
+
+---
+
+### Backend — Realtime & IoT
+
+**Socket.IO Gateway (`RealtimeGateway`):**
+
+- Validates JWT from `handshake.auth.token` on connection
+- Disconnects unauthenticated clients
+- Supports `subscribe` / `unsubscribe` / `ping` messages
+- Broadcasts via `RealtimeService.broadcastToAll()`
+
+**Events emitted by backend:**
+
+
+| Event            | Source          | Payload                                                              |
+| ---------------- | --------------- | -------------------------------------------------------------------- |
+| `sensor-update`  | `IotService`    | `{sensorId, stationId, value, timestamp, thresholdViolated, status}` |
+| `alert-created`  | `AlertsService` | `{id, severity, message, stationId, station, sensorId, timestamp}`   |
+| `station-status` | Not yet emitted | — (planned)                                                         |
+
+**MQTT Client:**
+
+- Connects to `MQTT_BROKER_URL` (default `mqtt://localhost:1883`)
+- Subscribes to: `sensors/+/data`, `sensors/+/status`, `devices/+/heartbeat`
+- Parses sensor data and calls `IotService.processSensorData(sensorId, value)`
+- Publishes via `MqttClient.publish()` — no consumers yet call this for outbound commands
+
+---
+
+### Frontend (`pfe-frontend`)
+
+
+| Aspect           | Detail                                                      |
+| ---------------- | ----------------------------------------------------------- |
+| Framework        | React 18, Create React App                                  |
+| Router           | React Router 6,**HashRouter** (`#/`)                        |
+| UI Kit           | Reactstrap + Argon Dashboard Bootstrap theme                |
+| Workflow Editor  | JointJS (`@joint/core`), existing implementation preserved  |
+| State Management | Redux Toolkit                                               |
+| HTTP Client      | Axios via`services/apiClient.js` (with refresh interceptor) |
+| WebSocket        | Socket.IO client via`hooks/useSocket.js`                    |
+
+---
+
+### Frontend — Implemented Pages & Routes
+
+
+| Route                 | Component             | Real-time     | API Connected                                  | Status                         |
+| --------------------- | --------------------- | ------------- | ---------------------------------------------- | ------------------------------ |
+| `/admin/dashboard`    | `DashboardPage.jsx`   | ✅`useSocket` | ✅ fetchStations, fetchSensors, fetchAlerts    | ✅                             |
+| `/admin/builder`      | `BuilderPage.jsx`     | ❌            | ✅ workflowApi (fetch-based)                   | ✅ (in-memory)                 |
+| `/admin/stations`     | `StationsPage.jsx`    | ❌            | ✅ fetchStations, createStation, updateStation | ⚠️ No delete UI              |
+| `/admin/monitoring`   | `MonitoringPage.jsx`  | ✅`useSocket` | ✅ fetchSensors                                | ⚠️ No charts/live graph      |
+| `/admin/alerts`       | `AlertsPage.jsx`      | ❌            | ❌                                             | ❌**Empty file (0 bytes)**     |
+| `/admin/maintenance`  | `MaintenancePage.jsx` | ❌            | ✅ fetchMaintenance                            | ⚠️ Read-only, no create/edit |
+| `/admin/user-profile` | `Profile.js`          | ❌            | ❌                                             | ⚠️ Argon template stub       |
+| `/auth/login`         | `Login.jsx`           | ❌            | ✅ loginUser thunk                             | ✅                             |
+| `/auth/register`      | `Register.jsx`        | ❌            | ✅ registerUser thunk                          | ✅                             |
+
+**Missing pages per roadmap:**
+
+- Station Details page (`/admin/stations/:id`)
+- Create Station page (exists as modal, not dedicated route)
+- Sensor Details / Live Chart page
+- Analytics Dashboard
+- GIS Map view
+- Reports page
+- User Management page (admin)
+
+---
+
+### Frontend — Redux Store
+
+
+| Slice         | File                               | State Shape                                                        | Status                             |
+| ------------- | ---------------------------------- | ------------------------------------------------------------------ | ---------------------------------- |
+| `auth`        | `store/slices/authSlice.js`        | user, accessToken, refreshToken, isAuthenticated, isLoading, error | ✅ Full                            |
+| `stations`    | `store/slices/stationsSlice.js`    | items, meta, filters, isLoading, isSaving, error                   | ✅ Full                            |
+| `sensors`     | `store/slices/sensorsSlice.js`     | items, isLoading, error                                            | ✅ Full                            |
+| `alerts`      | `store/slices/alertsSlice.js`      | items, isLoading, error                                            | ✅ Full                            |
+| `maintenance` | `store/slices/maintenanceSlice.js` | items, isLoading, error                                            | ✅ Full                            |
+| `realtime`    | `store/slices/realtimeSlice.js`    | isConnected, sensorUpdates, alertReceived, stationStatus           | ✅ Full                            |
+| `dashboard`   | `store/slices/dashboardSlice.js`   | derived/computed dashboard state                                   | ✅ Full                            |
+| `ui`          | —                                 | theme, sidebar state                                               | ❌**Missing** (planned in roadmap) |
+
+---
+
+### Frontend — Services & Hooks
+
+**API Services:**
+
+
+| Service              | File                             | Backend Endpoint                               | Status              |
+| -------------------- | -------------------------------- | ---------------------------------------------- | ------------------- |
+| `authService`        | `services/authService.js`        | `/api/auth/*`                                  | ✅                  |
+| `stationService`     | `services/stationService.js`     | `/api/stations/*`                              | ✅                  |
+| `sensorService`      | `services/sensorService.js`      | `/api/sensors/*`                               | ✅                  |
+| `alertService`       | `services/alertService.js`       | `/api/alerts/*`                                | ✅                  |
+| `maintenanceService` | `services/maintenanceService.js` | `/api/maintenance/*`                           | ✅                  |
+| `workflowApi`        | `services/workflowApi.js`        | `/api/flows/*` (fetch-based, separate env var) | ⚠️ Env drift risk |
+
+**Custom Hooks:**
+
+
+| Hook                | File                         | Status                                             |
+| ------------------- | ---------------------------- | -------------------------------------------------- |
+| `useSocket`         | `hooks/useSocket.js`         | ✅ Connects to Socket.IO, dispatches Redux actions |
+| `useWorkflowEditor` | `hooks/useWorkflowEditor.js` | ✅ JointJS graph management                        |
+| `useJointGraph`     | `hooks/useJointGraph.js`     | ✅                                                 |
+| `useAutosave`       | `hooks/useAutosave.js`       | ✅                                                 |
+| `useLogout`         | `hooks/useLogout.js`         | ✅                                                 |
+| `useAuth`           | —                           | ❌ Missing (referenced in roadmap)                 |
+| `useFetch`          | —                           | ❌ Missing                                         |
+| `useLocalStorage`   | —                           | ❌ Missing                                         |
+| `useTheme`          | —                           | ❌ Missing                                         |
+
+---
+
+### Frontend — Workflow Builder
+
+The original workflow builder is **fully preserved** and functional:
+
+
+| Component                                                     | Status |
+| ------------------------------------------------------------- | ------ |
+| `BlockSidebar` — drag & drop panel                           | ✅     |
+| `FlowCanvas` / `JointPaper` — JointJS canvas                 | ✅     |
+| `CanvasToolbar` — run/save/clear                             | ✅     |
+| `NodeEditorModal` / `PropertiesPanel` — property editing     | ✅     |
+| `graphSerializer` / `graphDeserializer` — JSON ↔ graph      | ✅     |
+| `workflowExecutorClient` — client-side execution trigger     | ✅     |
+| `blockRegistry` / `blockFactory` — block registration system | ✅     |
+| `autosaveManager` — debounced save                           | ✅     |
+
+**Block types in `data/blocks.js`:**
+
+
+| Block               | Type              | Status                       |
+| ------------------- | ----------------- | ---------------------------- |
+| Input               | `input`           | ✅ (generic)                 |
+| Action              | `action`          | ✅ (generic math/string ops) |
+| Decision            | `decision`        | ✅ (generic comparator)      |
+| Output              | `output`          | ✅ (generic)                 |
+| **Sensor Read**     | `sensor-read`     | ❌ Missing                   |
+| **Threshold Check** | `threshold-check` | ❌ Missing                   |
+| **Pump Control**    | `pump-control`    | ❌ Missing                   |
+| **Alert Trigger**   | `alert-trigger`   | ❌ Missing                   |
+| **MQTT Publish**    | `mqtt-publish`    | ❌ Missing                   |
+| **Station Control** | `station-control` | ❌ Missing                   |
+
+---
+
+### Infrastructure & Deployment
+
+
+| Component          | Config                                             | Status                                    |
+| ------------------ | -------------------------------------------------- | ----------------------------------------- |
+| PostgreSQL 15      | `docker-compose.yml`, port 5432                    | ✅ Configured                             |
+| Redis 7            | `docker-compose.yml`, port 6379                    | ⚠️ Configured but**unused** in app code |
+| Mosquitto MQTT     | `docker-compose.yml`, ports 1883/9001              | ✅ Configured                             |
+| Backend container  | Not in docker-compose                              | ❌ No backend Dockerfile                  |
+| Frontend container | Not in docker-compose                              | ❌ No frontend Dockerfile                 |
+| Frontend build     | `build/` directory present                         | ✅ Built artifact exists                  |
+| `.env` files       | `pfe-backend/.env` and `pfe-frontend/.env` present | ✅                                        |
+
+---
+
+## Completed Phases
+
+### Phase 1 — Core Infrastructure ✅ (Largely Complete)
+
+- [X]  TypeORM + PostgreSQL database module
+- [X]  9 database entities (User, Station, Sensor, SensorData, Alert, Maintenance, Workflow, WorkflowExecution, Notification)
+- [X]  JWT authentication (register, login, refresh, logout, me)
+- [X]  JWT strategy + JwtGuard + RolesGuard
+- [X]  RBAC decorators (Roles, CurrentUser)
+- [X]  Socket.IO gateway with JWT authentication
+- [X]  RealtimeService with broadcast methods
+- [X]  MQTT client subscribing to sensor topics
+- [X]  IotService processing sensor data → DB → WebSocket → Alerts
+- [X]  Redux Toolkit store with 7 slices (auth, stations, sensors, alerts, maintenance, realtime, dashboard)
+- [X]  Axios API client with JWT bearer + refresh interceptor
+- [X]  Docker Compose (PostgreSQL, Redis, Mosquitto)
+
+**Phase 1 Gaps:**
+
+- [ ]  No database migration files generated
+- [ ]  Redis unused
+- [ ]  `uiSlice` not created
+
+### Phase 2 — Core Modules ⚠️ (Partially Complete)
+
+- [X]  Dashboard page with KPI cards, station overview, alerts feed, realtime stats
+- [X]  Stations CRUD page with create/edit modals and filtering
+- [X]  Monitoring page with sensor table, create sensor modal, realtime updates
+- [X]  Maintenance page (read-only list view)
+- [X]  Auth pages (Login, Register) with Redux integration
+- [X]  Protected route component
+- [ ]  AlertsPage — **EMPTY** (0 bytes, not implemented)
+- [ ]  Station Details page
+- [ ]  Sensor Details / history chart page
+- [ ]  Maintenance create/edit forms
+- [ ]  Alert acknowledge/resolve UI
+- [ ]  Live sensor chart components (`LiveChart`, `RealtimeGauge`)
+- [ ]  Common UI components library (`Common/`, `DataDisplay/`, `Forms/`, `Layout/`)
+
+---
+
+## Missing Phases
+
+### Phase 3 — Workflow Extensions ❌
+
+- [ ]  Industrial workflow blocks (SensorRead, ThresholdCheck, PumpControl, AlertTrigger, MqttPublish)
+- [ ]  Workflow persistence to PostgreSQL via `Workflow` entity
+- [ ]  Workflow execution history saved to `WorkflowExecution` entity
+- [ ]  Workflow execution triggers from IoT events
+- [ ]  `FlowsService` refactored from in-memory Map to TypeORM repository
+- [ ]  JWT guards added to `/api/flows` routes
+
+### Phase 4 — Advanced Features ❌
+
+- [ ]  Analytics dashboard (consumption trends, pressure analytics, quality metrics)
+- [ ]  GIS/map station visualization
+- [ ]  Export system (CSV, PDF)
+- [ ]  Reports module
+- [ ]  Email/SMS notification channels (`NotificationsModule`)
+- [ ]  Predictive maintenance algorithms
+- [ ]  User management admin panel
+- [ ]  Sensor calibration/configuration UI
+- [ ]  Dark mode / theme system
+
+---
+
+## Technical Debt & Risks
+
+
+| Risk                               | Severity | Description                                                                                                                                                               |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/flows` has no auth           | HIGH     | All flow CRUD + execution endpoints are public. Any anonymous user can create, read, or execute workflows.                                                                |
+| FlowsService is in-memory          | HIGH     | Workflows are lost on every server restart.`Workflow` TypeORM entity exists but is unused.                                                                                |
+| No DB migrations                   | HIGH     | No migration files in`database/migrations/`. Production deployment requires `synchronize: true` (dangerous) or manual migration authoring.                                |
+| AlertsPage is empty                | HIGH     | The`/admin/alerts` page renders nothing. Alerts functionality has no UI despite full backend implementation.                                                              |
+| Redis unused                       | MEDIUM   | Redis is declared in Docker Compose but never connected to the NestJS app. Planned for session/cache use.                                                                 |
+| Env drift on workflows             | MEDIUM   | `workflowApi.js` uses `REACT_APP_WORKFLOW_API_URL` (fetch-based) while all other services use `REACT_APP_API_URL` (Axios). If env vars diverge, workflows hit wrong host. |
+| No uiSlice                         | LOW      | Planned in roadmap for theme/sidebar control; not created.                                                                                                                |
+| No test files                      | MEDIUM   | Zero test files found (`*.spec.ts`, `*.test.ts`, `*.test.jsx`).                                                                                                           |
+| No backend Dockerfile              | MEDIUM   | Backend cannot be containerized without authoring a Dockerfile.                                                                                                           |
+| `station-status` event not emitted | LOW      | `useSocket.js` listens for `station-status` but backend never emits it.                                                                                                   |
+
 Generated from the real codebase in `C:\Users\Grous info\Downloads\pfe` on 2026-05-10. The requested path `C:\Users\DELL\Downloads\pfe-project` was not present in this environment; this repository contains the AquaFlow documents and the `pfe-backend` / `pfe-frontend` applications.
 
 ## Executive Summary
@@ -98,22 +507,23 @@ Missing planned modules:
 
 ### Implemented Backend Modules
 
-| Module | State | Notes |
-|---|---|---|
-| Database | Partial/strong Phase 1 | TypeORM configured for PostgreSQL with core entities and synchronize enabled outside production. Migration status is documented, but no initial migration is generated yet. |
-| Auth | Partial/strong Phase 1 | Register, login, me, logout, and refresh token endpoint exist. JWT strategy and password hashing exist. Refresh tokens are JWT-based and not yet persisted/rotated. |
-| RBAC | Partial | `JwtGuard`, `RolesGuard`, and `Roles` decorator exist and are applied to CRUD modules. Frontend now hides several privileged station/sensor/alert actions by role. |
-| Realtime | Partial | Socket.IO gateway and service exist. Subscribe/unsubscribe/ping events exist. Broadcast methods exist. Socket connections now validate JWT tokens from handshake auth. |
-| IoT/MQTT | Partial | MQTT client connects, subscribes, parses `sensors/{sensorId}/data`, delegates valid numeric readings to `IotService`, and threshold violations create persistent alerts. |
-| Stations | Partial/usable | CRUD controller/service/DTOs exist, protected with JWT/RBAC. Includes pagination/filtering. |
-| Sensors | Partial/usable | CRUD plus `GET /sensors/:id/data` exists. Sensor data model exists. |
-| Alerts | Partial/usable | List, detail, create, acknowledge, resolve exist. Delete/clear endpoint from docs is absent. |
-| Maintenance | Partial/usable | List, detail, create, update, delete exist. Dedicated assignment endpoint is absent. |
-| Flows/workflows | Partial | Existing workflow execution engine and `/flows` endpoints exist, but flow storage is in-memory and not using `Workflow` entities. |
-| Analytics | Missing | No backend analytics module. |
-| Reports | Missing | No backend reports module. |
-| Notifications | Missing | Notification entity exists, but no notification service/controller/channels. |
-| GIS/map | Missing | No backend map/geospatial endpoint beyond station latitude/longitude fields. |
+
+| Module          | State                  | Notes                                                                                                                                                                       |
+| --------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Database        | Partial/strong Phase 1 | TypeORM configured for PostgreSQL with core entities and synchronize enabled outside production. Migration status is documented, but no initial migration is generated yet. |
+| Auth            | Partial/strong Phase 1 | Register, login, me, logout, and refresh token endpoint exist. JWT strategy and password hashing exist. Refresh tokens are JWT-based and not yet persisted/rotated.         |
+| RBAC            | Partial                | `JwtGuard`, `RolesGuard`, and `Roles` decorator exist and are applied to CRUD modules. Frontend now hides several privileged station/sensor/alert actions by role.          |
+| Realtime        | Partial                | Socket.IO gateway and service exist. Subscribe/unsubscribe/ping events exist. Broadcast methods exist. Socket connections now validate JWT tokens from handshake auth.      |
+| IoT/MQTT        | Partial                | MQTT client connects, subscribes, parses`sensors/{sensorId}/data`, delegates valid numeric readings to `IotService`, and threshold violations create persistent alerts.     |
+| Stations        | Partial/usable         | CRUD controller/service/DTOs exist, protected with JWT/RBAC. Includes pagination/filtering.                                                                                 |
+| Sensors         | Partial/usable         | CRUD plus`GET /sensors/:id/data` exists. Sensor data model exists.                                                                                                          |
+| Alerts          | Partial/usable         | List, detail, create, acknowledge, resolve exist. Delete/clear endpoint from docs is absent.                                                                                |
+| Maintenance     | Partial/usable         | List, detail, create, update, delete exist. Dedicated assignment endpoint is absent.                                                                                        |
+| Flows/workflows | Partial                | Existing workflow execution engine and`/flows` endpoints exist, but flow storage is in-memory and not using `Workflow` entities.                                            |
+| Analytics       | Missing                | No backend analytics module.                                                                                                                                                |
+| Reports         | Missing                | No backend reports module.                                                                                                                                                  |
+| Notifications   | Missing                | Notification entity exists, but no notification service/controller/channels.                                                                                                |
+| GIS/map         | Missing                | No backend map/geospatial endpoint beyond station latitude/longitude fields.                                                                                                |
 
 ### Implemented APIs
 

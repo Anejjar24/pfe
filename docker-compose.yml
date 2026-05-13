@@ -1,6 +1,8 @@
 version: '3.8'
 
 services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
   postgres:
     image: postgres:15-alpine
     container_name: aquaflow-postgres
@@ -19,6 +21,7 @@ services:
       retries: 5
     networks:
       - aquaflow-network
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -34,6 +37,7 @@ services:
       retries: 5
     networks:
       - aquaflow-network
+    restart: unless-stopped
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -46,12 +50,68 @@ services:
       - mosquitto_data:/mosquitto/data
       - mosquitto_logs:/mosquitto/log
     healthcheck:
-      test: ['CMD', 'mosquitto_sub', '-h', 'localhost', '-t', '#', '-C', '1']
+      test: ['CMD', 'mosquitto_sub', '-h', 'localhost', '-t', '#', '-C', '1', '-W', '3']
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - aquaflow-network
+    restart: unless-stopped
+
+  # ── Application ─────────────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aquaflow-backend
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # Database
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: aquaflow
+      # JWT — override in .env or via environment
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-32chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-in-production}
+      # MQTT
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # CORS
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    networks:
+      - aquaflow-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3001/api}
+        REACT_APP_WS_URL: ${REACT_APP_WS_URL:-http://localhost:3001}
+    container_name: aquaflow-frontend
+    ports:
+      - '3000:80'
+    depends_on:
+      - backend
+    networks:
+      - aquaflow-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

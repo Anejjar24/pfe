@@ -1,750 +1,343 @@
-# AI Continuation Prompt for AquaFlow Development
-
 # AquaFlow — AI Continuation Prompt
 
-**Purpose:** Drop this entire document into a new AI coding session (Claude, GPT-4, Cursor, etc.) to resume development without re-scanning the codebase.
-**Last updated:** 2026-05-10 (generated from full code audit)
+**Last updated:** 2026-05-25
+**Purpose:** Paste this entire document at the start of a new Claude Code session to resume AquaFlow development without re-scanning the codebase. All facts are derived from a full file-by-file code audit.
 
 ---
 
-## SYSTEM CONTEXT
+## What Is AquaFlow?
 
-You are a senior full-stack engineer continuing development on **AquaFlow**, an industrial water station supervision and automation platform.
-
-This is an EXISTING codebase. DO NOT rebuild, scaffold, or regenerate anything from scratch. Work INCREMENTALLY on top of the existing architecture.
+AquaFlow is an industrial water-station supervision platform built as a PFE (final-year engineering project). It monitors water distribution infrastructure in real time: stations, sensors, alerts, maintenance, and automation workflows. The codebase lives at `pfe-project/` and is split into a NestJS backend (`backend/`) and a React frontend (`frontend/`). The full stack runs with `docker-compose up --build` in one command.
 
 ---
 
-## PROJECT DESCRIPTION
+## Tech Stack
 
-AquaFlow is a SCADA-like web platform for managing drinking water distribution stations. It combines:
-
-- Real-time IoT sensor monitoring via MQTT
-- WebSocket-based live dashboards
-- Alert detection and management
-- Maintenance work order tracking
-- Visual workflow automation builder (based on JointJS)
-- REST APIs for all CRUD operations
-
----
-
-## TECHNOLOGY STACK
-
-### Backend (`pfe-backend/`)
-
-- **Runtime:** Node.js 20, TypeScript
-- **Framework:** NestJS 10
-- **ORM:** TypeORM with PostgreSQL 15
-- **Auth:** JWT (access 1h + refresh 7d), Passport.js, bcrypt
-- **Realtime:** Socket.IO via `@nestjs/websockets`
-- **IoT:** MQTT via `mqtt` npm package
-- **Validation:** `class-validator`, `class-transformer`, global `ValidationPipe`
-- **Port:** 3001, global API prefix: `/api`
-
-### Frontend (`pfe-frontend/`)
-
-- **Framework:** React 18, Create React App
-- **Router:** React Router 6, **HashRouter** (routes start with `#/`)
-- **UI Kit:** Reactstrap + Argon Dashboard (Bootstrap 4 based)
-- **Workflow Editor:** JointJS (`@joint/core`) — DO NOT modify core editor components
-- **State:** Redux Toolkit (7 slices: auth, stations, sensors, alerts, maintenance, realtime, dashboard)
-- **HTTP:** Axios (`services/apiClient.js`) with automatic JWT refresh interceptor
-- **WebSocket:** Socket.IO client (`socket.io-client`) via `hooks/useSocket.js`
-
-### Infrastructure
-
-- **Docker:** PostgreSQL 15, Redis 7, Mosquitto MQTT broker
-- **Docker Compose:** `docker-compose.yml` in project root
-- CORS origin configured via `FRONTEND_URL` env var
+| Layer | Technology |
+|-------|-----------|
+| Backend | NestJS 10, Node 20, TypeScript |
+| Database | PostgreSQL 15 via TypeORM (9 entities, 1 migration) |
+| Cache | Redis 7 (sensor list cache + auth denylist; in-memory fallback) |
+| MQTT | Eclipse Mosquitto 2 — topic `sensor/+/data` ingestion |
+| Auth | JWT access (1 h) + refresh (7 d) + Redis denylist on logout |
+| Real-time | Socket.IO — 5 server→client events |
+| API docs | Swagger at `/api/docs` |
+| Frontend | React 18 + Redux Toolkit + React Router 6 |
+| UI | Argon Dashboard React (Reactstrap / Bootstrap 4) |
+| Charts | Chart.js 2 via react-chartjs-2 |
+| Workflow canvas | JointJS |
+| Container | Docker + Docker Compose (5-service stack) |
 
 ---
 
-## FOLDER STRUCTURE
+## Repository Layout (Key Paths)
 
 ```
-pfe/
-├── docker-compose.yml
-├── mosquitto/config/mosquitto.conf
-├── pfe-backend/
-│   ├── src/
-│   │   ├── app.module.ts              ← registers all modules
-│   │   ├── main.ts                    ← port 3001, prefix 'api', CORS, ValidationPipe
-│   │   ├── auth/                      ← JWT auth (register, login, refresh, logout, me)
-│   │   ├── common/
-│   │   │   ├── decorators/            ← @Roles(), @CurrentUser()
-│   │   │   └── guards/                ← JwtGuard, RolesGuard
-│   │   ├── database/
-│   │   │   ├── database.module.ts
-│   │   │   ├── entities/              ← 9 TypeORM entities
-│   │   │   ├── migrations/            ← EMPTY (needs migration files)
-│   │   │   ├── schemas/flow.schema.ts ← FlowRecord type (in-memory flows)
-│   │   │   └── seeds/seed.ts
-│   │   ├── realtime/                  ← Socket.IO gateway + RealtimeService
-│   │   ├── iot/
-│   │   │   ├── iot.service.ts         ← processSensorData() pipeline
-│   │   │   └── mqtt/mqtt.client.ts   ← MQTT subscribe/publish
-│   │   ├── stations/                  ← full CRUD + JwtGuard
-│   │   ├── sensors/                   ← full CRUD + GET /sensors/:id/data
-│   │   ├── alerts/                    ← full CRUD + acknowledge + resolve
-│   │   ├── maintenance/               ← full CRUD + JwtGuard
-│   │   └── flows/                     ← ⚠️ NO JWT guard, in-memory Map storage
-│   │       ├── flows.service.ts       ← uses Map, not TypeORM
-│   │       ├── flows.controller.ts    ← no @UseGuards
-│   │       ├── flow-executor.service.ts
-│   │       └── flow-validator.service.ts
-│   └── src/execution/
-│       ├── engine/
-│       │   ├── workflow-runner.ts     ← BFS execution engine
-│       │   ├── node-executor.ts       ← dispatches to handlers
-│       │   └── execution-context.ts
-│       └── handlers/
-│           ├── input.handler.ts
-│           ├── action.handler.ts      ← multiply/add/subtract/divide/uppercase/append
-│           ├── decision.handler.ts
-│           └── output.handler.ts
-└── pfe-frontend/
-    └── src/
-        ├── routes.js                  ← defines admin + auth routes
-        ├── App.jsx                    ← HashRouter, Provider wrapping
-        ├── store/
-        │   ├── store.js               ← 7 slices registered
-        │   └── slices/                ← authSlice, stationsSlice, sensorsSlice,
-        │                                alertsSlice, maintenanceSlice, realtimeSlice, dashboardSlice
-        ├── hooks/
-        │   ├── useSocket.js           ← connects to WS, dispatches Redux on events
-        │   ├── useWorkflowEditor.js   ← JointJS editor state
-        │   ├── useAutosave.js
-        │   ├── useJointGraph.js
-        │   └── useLogout.js
-        ├── services/
-        │   ├── apiClient.js           ← Axios + auth interceptor (REACT_APP_API_URL)
-        │   ├── authService.js
-        │   ├── stationService.js
-        │   ├── sensorService.js
-        │   ├── alertService.js
-        │   ├── maintenanceService.js
-        │   └── workflowApi.js         ← ⚠️ uses fetch, REACT_APP_WORKFLOW_API_URL
-        ├── modules/
-        │   ├── auth/pages/            ← Login.jsx, Register.jsx
-        │   ├── dashboard/             ← DashboardPage.jsx (KPI, StationOverview, AlertsFeed, RealtimeStats)
-        │   ├── stations/pages/        ← StationsPage.jsx (create/edit modal, table)
-        │   ├── monitoring/pages/      ← MonitoringPage.jsx (sensor table, create modal)
-        │   ├── alerts/pages/          ← AlertsPage.jsx ← ⚠️ EMPTY FILE
-        │   └── maintenance/pages/     ← MaintenancePage.jsx (read-only list)
-        ├── data/blocks.js             ← 4 generic blocks (input, action, decision, output)
-        ├── components/                ← Workflow editor components (DO NOT MODIFY)
-        │   ├── Blocksidebar/
-        │   ├── canvas/
-        │   ├── nodes/
-        │   └── properties/
-        ├── engine/                    ← graphSerializer, graphDeserializer, autosaveManager
-        └── registry/                  ← blockRegistry, blockFactory
+pfe-project/
+├── backend/src/
+│   ├── alerts/           CRUD + ack/resolve + spec
+│   ├── analytics/        Overview, sensor stats, station history
+│   ├── auth/             JWT, refresh, Redis denylist + spec
+│   ├── common/           JwtGuard, RolesGuard, decorators, workflow.types.ts
+│   ├── database/
+│   │   ├── entities/     9 entities (User, Station, Sensor, SensorData, Alert,
+│   │   │                  Maintenance, Notification, Workflow, WorkflowExecution)
+│   │   ├── migrations/   1778543154417-InitialSchema.ts
+│   │   └── seeds/        seed.ts — 5 stations, 15 sensors, 5 alerts, 4 maint orders
+│   ├── execution/
+│   │   ├── engine/       node-executor.ts, workflow-runner.ts, execution-context.ts
+│   │   └── handlers/     10 real handlers + 2 STUBS (api, notification)
+│   ├── flows/            FlowsService (DB-persisted), FlowExecutorService (no DB write),
+│   │                     FlowValidatorService, FlowsController
+│   ├── iot/              IotService (MQTT ingestion), MqttClient
+│   ├── maintenance/      Full CRUD
+│   ├── notifications/    In-app + email (nodemailer) + WS broadcast + spec
+│   ├── realtime/         RealtimeGateway, RealtimeService
+│   ├── sensors/          Full CRUD + Redis cache + inject reading endpoint
+│   ├── stations/         Full CRUD + station-status WS emit
+│   ├── app.module.ts     NO AppController (no /api/health route)
+│   └── main.ts           CORS, ValidationPipe, Swagger setup, port 3001
+├── frontend/src/
+│   ├── components/       Sidebar, AdminNavbar (notification bell), builder nodes
+│   ├── data/blocks.js    14 block types (6 generic + 8 industrial/integration)
+│   ├── engine/           autosaveManager, graphSerializer/Deserializer, workflowExecutorClient
+│   ├── hooks/            useSocket (5 WS events), useWorkflowEditor, useAutosave, useLogout
+│   ├── layouts/Admin.js  routes + /monitoring/:sensorId + /stations/:stationId
+│   ├── modules/
+│   │   ├── alerts/       AlertsPage (table, severity/status filters, ack, resolve) ✅
+│   │   ├── analytics/    AnalyticsPage (KPI cards, doughnut charts, sensor stats) ✅
+│   │   ├── auth/         Login, Register, ProtectedRoute ✅
+│   │   ├── dashboard/    DashboardPage (KPIs, feeds, realtime; no trend charts) 🔶
+│   │   ├── maintenance/  MaintenancePage (CRUD modal; no filter bar, no assignedTo) 🔶
+│   │   ├── monitoring/   MonitoringPage (table; no filter bar) 🔶
+│   │   │                 SensorDetailsPage (line chart, limit picker) ✅
+│   │   └── stations/     StationsPage (filters, CRUD, delete) ✅
+│   │                     StationDetailsPage (local state; no analytics chart) 🔶
+│   ├── pages/BuilderPage.jsx         Actual workflow builder implementation
+│   ├── views/builder/BuilderPage.jsx Re-export of pages/BuilderPage.jsx
+│   ├── views/examples/Profile.js     Argon stub — no real data
+│   ├── views/test.js                 Diagnostics page (embeds BuilderPage)
+│   ├── routes.js         8 sidebar routes + hidden /test + auth routes
+│   ├── services/         apiClient.js, authSession.js + 8 domain services
+│   └── store/
+│       ├── store.js      9 slices: auth, dashboard, realtime, stations, sensors,
+│       │                  alerts, maintenance, ui, notifications
+│       └── slices/       9 slice files; each has selectors exported
+├── docker-compose.yml    5 services with healthchecks
+└── mosquitto/config/
 ```
 
 ---
 
-## DATABASE ENTITIES (TypeORM)
-
-All entities are in `pfe-backend/src/database/entities/`:
-
-
-| Entity            | Key fields                                                                                                                                                                                                          | Relations                                             |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| User              | id (uuid), email, password, firstname, lastname, role (enum: admin/operator/technician/analyst), isActive                                                                                                           | stations, assignedMaintenances, createdWorkflows      |
-| Station           | id, name, location, coordinates (json), capacity, capacityUnit, type, status (enum: normal/warning/critical/offline), description, lastStatusChange                                                                 | sensors, alerts, maintenances, createdBy              |
-| Sensor            | id, name, type, unit, status (enum: active/inactive/faulty/offline), deviceId, serialNumber, location, minThreshold, maxThreshold, alertEnabled, lastReading, lastReadingAt,`isThresholdViolated` (computed getter) | station, sensorData, alerts                           |
-| SensorData        | id, value, timestamp, qualityFlags (json)                                                                                                                                                                           | sensor                                                |
-| Alert             | id, type (enum), severity (enum: info/warning/critical), message, description, status (enum: active/acknowledged/resolved), data (json), sourceSystem, acknowledgedAt, resolvedAt                                   | station, sensor, acknowledgedBy, resolvedBy           |
-| Maintenance       | id, title, type, priority (enum: low/medium/high/critical), status (enum: scheduled/in_progress/completed/cancelled/on_hold), description, scheduledDate, startedAt, completedAt, notes                             | station, assignedTo, createdBy                        |
-| Workflow          | id, name, description, graph (json), isActive, version                                                                                                                                                              | createdBy (User) — ⚠️ NOT YET USED BY FlowsService |
-| WorkflowExecution | id, status, input (json), output (json), steps (json), startedAt, completedAt, errorMessage                                                                                                                         | workflow — ⚠️ NOT YET USED                         |
-| Notification      | id, type, status, recipient, content (json), sentAt, deliveredAt                                                                                                                                                    | alert — ⚠️ NO MODULE/SERVICE                       |
-
----
-
-## API REFERENCE
-
-All routes prefixed with `/api`.
+## Complete API Endpoint Table
 
 ### Auth
+| Method | Path | Auth | Body |
+|--------|------|------|------|
+| POST | `/api/auth/register` | none | `{ email, password, firstname, lastname }` |
+| POST | `/api/auth/login` | none | `{ email, password }` → `{ access_token, refresh_token, user }` |
+| GET | `/api/auth/me` | JwtGuard | → current user |
+| POST | `/api/auth/logout` | JwtGuard | `{ refresh_token }` |
+| POST | `/api/auth/refresh` | none | `{ refresh_token }` → new token pair |
 
-```
-POST /api/auth/register    { email, password, firstname, lastname } → { access_token, refresh_token, user }
-POST /api/auth/login       { email, password } → { access_token, refresh_token, user }
-POST /api/auth/refresh     { refresh_token } → { access_token, refresh_token, user }
-POST /api/auth/logout      [JWT] → { message }
-GET  /api/auth/me          [JWT] → user object
-```
+### Stations (JwtGuard + RolesGuard)
+| Method | Path | Min Role | Query/Notes |
+|--------|------|----------|------------|
+| GET | `/api/stations` | any | `page, limit, search, status, type` |
+| GET | `/api/stations/:id` | any | with sensors + alerts + maintenances |
+| POST | `/api/stations` | operator | |
+| PATCH | `/api/stations/:id` | operator | emits `station-status` WS if status in body |
+| DELETE | `/api/stations/:id` | admin | 204 |
 
-### Stations [JWT required]
+### Sensors (JwtGuard + RolesGuard)
+| Method | Path | Min Role | Notes |
+|--------|------|----------|-------|
+| GET | `/api/sensors` | any | `page, limit, stationId, type, status, search`; Redis-cached |
+| GET | `/api/sensors/:id` | any | with station + recent alerts |
+| GET | `/api/sensors/:id/data` | any | `limit` (default 100); newest first |
+| POST | `/api/sensors` | operator | |
+| PATCH | `/api/sensors/:id` | operator | invalidates list cache |
+| DELETE | `/api/sensors/:id` | admin | 204 |
+| POST | `/api/sensors/:id/reading` | operator | Manual inject: `{ value }` → updates lastReading, saves SensorData |
 
-```
-GET    /api/stations          ?page=&limit=&status=&type=&search=
-POST   /api/stations          [Admin/Operator] body: CreateStationDto
-GET    /api/stations/:id
-PATCH  /api/stations/:id      [Admin/Operator]
-DELETE /api/stations/:id      [Admin]
-```
+### Alerts (JwtGuard + RolesGuard)
+| Method | Path | Min Role | Notes |
+|--------|------|----------|-------|
+| GET | `/api/alerts` | any | `page, limit, severity, status` |
+| GET | `/api/alerts/:id` | any | |
+| POST | `/api/alerts` | operator | broadcasts `alert-created` WS |
+| PATCH | `/api/alerts/:id/acknowledge` | technician | |
+| PATCH | `/api/alerts/:id/resolve` | technician | |
 
-### Sensors [JWT required]
+### Maintenance (JwtGuard + RolesGuard)
+| Method | Path | Min Role | Notes |
+|--------|------|----------|-------|
+| GET | `/api/maintenance` | any | `page, limit, status, priority` |
+| GET | `/api/maintenance/:id` | any | |
+| POST | `/api/maintenance` | technician | |
+| PATCH | `/api/maintenance/:id` | technician | |
+| DELETE | `/api/maintenance/:id` | admin | 204 |
 
-```
-GET    /api/sensors           ?page=&limit=&stationId=&type=&status=
-POST   /api/sensors           [Admin/Operator]
-GET    /api/sensors/:id
-GET    /api/sensors/:id/data  ?limit=100
-PATCH  /api/sensors/:id       [Admin/Operator]
-DELETE /api/sensors/:id       [Admin]
-```
+### Flows (JwtGuard only)
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/flows` | list all |
+| GET | `/api/flows/:id` | |
+| POST | `/api/flows` | `{ name, graph }` |
+| PUT | `/api/flows/:id` | replace graph |
+| DELETE | `/api/flows/:id` | |
+| POST | `/api/flows/execute` | `{ graph, input }` — ad-hoc run |
 
-### Alerts [JWT required]
+### Analytics (JwtGuard only)
+| Method | Path | Query Params |
+|--------|------|-------------|
+| GET | `/api/analytics/overview` | — |
+| GET | `/api/analytics/sensors/:id/stats` | `from, to` (ISO 8601; default 24h ago to now) |
+| GET | `/api/analytics/stations/:id/history` | `from, to, granularity=hour\|day` |
 
-```
-GET    /api/alerts            ?page=&limit=&severity=&status=&type=&stationId=&sensorId=
-POST   /api/alerts
-GET    /api/alerts/:id
-PATCH  /api/alerts/:id/acknowledge
-PATCH  /api/alerts/:id/resolve
-```
+### Notifications (JwtGuard only)
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/notifications` | `page, limit` |
+| GET | `/api/notifications/unread-count` | → `{ count }` |
+| PATCH | `/api/notifications/read-all` | → `{ updated }` |
+| PATCH | `/api/notifications/:id/read` | |
 
-### Maintenance [JWT required]
-
-```
-GET    /api/maintenance       ?page=&limit=&status=&priority=&stationId=
-POST   /api/maintenance       [Admin/Operator/Technician]
-GET    /api/maintenance/:id
-PATCH  /api/maintenance/:id
-DELETE /api/maintenance/:id   [Admin]
-```
-
-### Flows [⚠️ NO AUTH GUARD — FIX IMMEDIATELY]
-
-```
-GET    /api/flows
-POST   /api/flows             body: { name, graph: WorkflowGraph }
-GET    /api/flows/:id
-PUT    /api/flows/:id
-DELETE /api/flows/:id
-POST   /api/flows/:id/execute body: { input: {} }
-```
-
----
-
-## WEBSOCKET EVENTS
-
-**Connection:** Client connects with `auth: { token: '<JWT>' }` in Socket.IO handshake. Backend validates JWT; disconnects on failure.
-
-**Client → Server:**
-
-```
-subscribe   { channel: 'dashboard' | 'alerts' | 'stations' | 'sensors' }
-unsubscribe { channel: string }
-ping        {} → { pong: timestamp }
-```
-
-**Server → Client:**
-
-```
-sensor-update    { sensorId, stationId, value, timestamp, thresholdViolated, status }
-alert-created    { id, severity, message, stationId, station, sensorId, timestamp }
-station-status   { stationId, status, ... }  ← ⚠️ NEVER EMITTED (bug)
-```
+**No `/api/health` endpoint exists** — `app.module.ts` has no AppController.
 
 ---
 
-## KNOWN BUGS & CRITICAL ISSUES
+## WebSocket Events Table
 
-1. **`FlowsController` has no JWT guard** — `/api/flows` is fully public. Fix: add `@UseGuards(JwtGuard)` to the controller.
-2. **`AlertsPage.jsx` is empty** — The file exists but has 0 content. The page renders nothing. Build it using `alertsSlice` (fetchAlerts, acknowledgeAlert, resolveAlert) and `useSocket(true)`.
-3. **`station-status` WebSocket event never emitted** — `StationsService.update()` does not call `RealtimeService.broadcastToAll('station-status', ...)`. Fix: inject `RealtimeService` into `StationsService` and emit on status change.
-4. **Workflows not persisted** — `FlowsService` stores flows in a `Map<string, FlowRecord>`. All workflows are lost on server restart. The `Workflow` TypeORM entity exists but is completely unused. Fix: refactor `FlowsService` to use `@InjectRepository(Workflow)`.
-5. **No database migrations** — The `database/migrations/` folder is empty. Production deployment will fail or corrupt schema. Fix: run `typeorm migration:generate`.
-6. **Redis configured but unused** — Redis is in docker-compose but no NestJS module connects to it. Not blocking, but a waste.
-7. **`workflowApi.js` uses separate env var** — It reads `REACT_APP_WORKFLOW_API_URL` via raw `fetch`. Other services use `REACT_APP_API_URL` via Axios. If these diverge, workflows silently target the wrong host.
+### Server → Client (emitted by backend, received by `useSocket.js`)
+
+| Event | Payload | Redux actions dispatched |
+|-------|---------|------------------------|
+| `sensor-update` | `{ sensorId, value, unit, timestamp, status }` | `sensorUpdateReceived` (realtime), `sensorRealtimeUpdated` (sensors), `applySensorUpdate` (dashboard) |
+| `alert-created` | alert object | `alertReceived` (realtime), `alertRealtimeReceived` (alerts), `addDashboardAlert` (dashboard) |
+| `station-status` | `{ stationId, status, name, timestamp }` | `stationStatusReceived` (realtime), `updateStationStatus` (dashboard), `stationRealtimeUpdated` (stations) |
+| `notification-created` | notification object | `notificationReceived` (notifications) |
+| `notifications-read-all` | — | `allNotificationsCleared` (notifications) |
+
+### Client → Server
+
+| Event | Payload | Notes |
+|-------|---------|-------|
+| `subscribe` | `{ channel: 'dashboard'\|'alerts'\|'stations'\|'sensors' }` | sent automatically on connect |
+| `unsubscribe` | `{ channel }` | |
+| `ping` | — | server responds with `{ pong: Date.now() }` |
 
 ---
 
-## CODING RULES & CONSTRAINTS
-
-### Architecture Rules
-
-1. **DO NOT rebuild or restructure** the existing module system. Add features inside existing modules or create new modules following the established NestJS pattern.
-2. **DO NOT modify JointJS workflow editor core** (`components/Blocksidebar/`, `components/canvas/`, `components/nodes/`, `engine/`, `registry/`). Only add new block definitions to `data/blocks.js` and handlers to `execution/handlers/`.
-3. **Always use `apiClient.js` (Axios) for new frontend API calls**, not raw `fetch`. The Axios client handles auth headers and token refresh automatically.
-4. **Always use Redux Toolkit thunks** for API calls from components. Do not call service functions directly from components.
-5. **Always add `@UseGuards(JwtGuard)` and appropriate `@Roles()` to new controllers.**
-6. **Frontend routes use HashRouter** — all routes are under `#/admin/` or `#/auth/`. New routes must be added to `routes.js` following the existing pattern.
-
-### NestJS Patterns
-
-```typescript
-// Standard module structure to follow
-@Injectable()
-export class XxxService {
-  constructor(
-    @InjectRepository(XxxEntity)
-    private readonly xxxRepository: Repository<XxxEntity>,
-    private readonly realtimeService: RealtimeService,  // inject for WS events
-  ) {}
-}
-```
-
-### Frontend Patterns
-
-```jsx
-// Standard page structure
-export default function XxxPage() {
-  const dispatch = useDispatch();
-  const items = useSelector(selectXxxItems);
-  useSocket(true); // enable if page needs realtime
-
-  useEffect(() => {
-    dispatch(fetchXxx());
-  }, [dispatch]);
-
-  return (
-    <>
-      <div className="header bg-gradient-info pb-8 pt-5 pt-md-8">
-        <Container fluid>...</Container>
-      </div>
-      <Container className="mt--7" fluid>
-        <Card className="shadow">...</Card>
-      </Container>
-    </>
-  );
-}
-```
-
-### Redux Slice Pattern
+## Redux Store Shape
 
 ```javascript
-// Standard slice structure
-const xxxSlice = createSlice({
-  name: 'xxx',
-  initialState: { items: [], isLoading: false, error: null },
-  reducers: {
-    xxxRealtimeUpdated: (state, action) => { /* handle WS push */ }
-  },
-  extraReducers: (builder) => {
-    builder
-      .addCase(fetchXxx.pending, (state) => { state.isLoading = true; })
-      .addCase(fetchXxx.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.items = action.payload.data ?? action.payload;
-      })
-      .addCase(fetchXxx.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload;
-      });
-  }
-});
+store = {
+  auth:          { user, accessToken, refreshToken, loading, error },
+  dashboard:     { stations, sensors, alerts, realtimeStats },
+  realtime:      { connected, sensorUpdates, alertsReceived, stationStatuses },
+  stations:      { items, selectedStation, meta, filters, isLoading, isSaving, error },
+  sensors:       { items, meta, isLoading, isSaving, error },
+  alerts:        { items, meta, isLoading, error },
+  maintenance:   { items, meta, isLoading, isSaving, error },
+  ui:            { sidebarMini, theme, notifications },
+  notifications: { items, unreadCount, meta, isLoading, error },
+}
 ```
 
 ---
 
-## IMMEDIATE NEXT TASKS (Priority Order)
+## Demo Credentials (from seed.ts — verified)
 
-### Task 1 — Fix JWT on FlowsController [15 min, CRITICAL]
+| Email | Password | Role |
+|-------|----------|------|
+| `admin@aquaflow.local` | `Admin123!` | admin |
+| `operator@aquaflow.local` | `Operator123!` | operator |
+| `technician@aquaflow.local` | `Tech123!` | technician |
+| `analyst@aquaflow.local` | `Analyst123!` | analyst |
 
-Add `@UseGuards(JwtGuard)` at the controller level in `pfe-backend/src/flows/flows.controller.ts`.
-
-### Task 2 — Build AlertsPage [1 day, HIGH]
-
-Create a complete alerts management page in `pfe-frontend/src/modules/alerts/pages/AlertsPage.jsx`:
-
-- List all alerts with severity/status/station/sensor columns
-- Acknowledge and resolve buttons per row
-- Filter bar (severity, status)
-- Real-time new alert notifications via `useSocket(true)`
-- Use existing `alertsSlice` (may need to add `acknowledgeAlert` and `resolveAlert` thunks)
-
-### Task 3 — Emit station-status WebSocket event [1 hour, HIGH]
-
-In `StationsService.update()`, inject `RealtimeService` and call `broadcastToAll('station-status', {stationId, status, timestamp})` when `statusChanged` is true.
-
-### Task 4 — Persist workflows to DB [4 hours, HIGH]
-
-Refactor `FlowsService` to use `@InjectRepository(Workflow)` repository instead of the in-memory `Map`.
-
-### Task 5 — Add Maintenance CRUD UI [1 day, MEDIUM]
-
-Add create/edit modal and delete button to `MaintenancePage.jsx`.
+> **Note:** The old docs said `admin@aquaflow.io` — this is wrong. Domain is `.local`.
 
 ---
 
-## HOW TO RUN THE PROJECT
+## Current Bugs (with exact file + fix)
+
+### 🔴 Bug 1: No `/api/health` endpoint
+- **File:** `backend/src/app.module.ts`
+- **Fix:** Create `backend/src/app.controller.ts` with `@Get('health')` returning `{ status: 'ok' }`. Add `controllers: [AppController]` to the `@Module` decorator.
+
+### 🔴 Bug 2: `api` workflow block returns mock data
+- **File:** `backend/src/execution/engine/node-executor.ts` line 60
+- **Fix:** Change `case 'api': return { request: node.data, input, mocked: true };` to `case 'api': return this.httpRequestHandler.execute(node, input);`
+
+### 🔴 Bug 3: `notification` workflow block returns mock data
+- **File:** `backend/src/execution/engine/node-executor.ts` line 61
+- **Fix:** Create `NotificationHandler` that calls `NotificationsService.createBroadcast()`. Wire it in `NodeExecutor` constructor.
+
+### 🔴 Bug 4: "View all notifications" is a dead link
+- **File:** `frontend/src/components/Navbars/AdminNavbar.js` line 228
+- **Fix:** Create `frontend/src/modules/notifications/pages/NotificationsPage.jsx` and register `/admin/notifications` in `routes.js`.
+
+### 🔶 Bug 5: MonitoringPage has no sensor filter bar
+- **File:** `frontend/src/modules/monitoring/pages/MonitoringPage.jsx` line 78
+- **Fix:** Add `stationFilter`, `typeFilter` state; pass them to `dispatch(fetchSensors({ stationId, type }))`. Add filter bar UI in `<CardHeader>`.
+
+### 🔶 Bug 6: StationDetailsPage has no analytics chart
+- **File:** `frontend/src/modules/stations/pages/StationDetailsPage.jsx`
+- **Fix:** Add `useEffect` that calls `analyticsService.getStationHistory(stationId, { granularity: 'hour' })`. Render a `<Line>` chart from the response.
+
+### 🔶 Bug 7: MaintenancePage missing filter bar and assignedTo field
+- **File:** `frontend/src/modules/maintenance/pages/MaintenancePage.jsx`
+- **Fix:** Add `assignedTo` to `initialForm`. Add status/priority filter selects. Pass filters to `dispatch(fetchMaintenance(params))`.
+
+### 🔶 Bug 8: Workflow execution never persisted
+- **File:** `backend/src/flows/flow-executor.service.ts`
+- **Fix:** Inject `WorkflowExecution` repository. Before `runner.run()` create execution record; after, update with status/output/duration.
+
+---
+
+## Features Not Yet Built (with effort estimates)
+
+| Feature | Estimated Effort |
+|---------|-----------------|
+| Add `/api/health` (Fix 1) | 15 min |
+| Fix `api` block (Fix 2) | 5 min |
+| Fix `notification` block (Fix 3) | 1.5 h |
+| Add notifications page (Fix 4) | 30–45 min |
+| Sensor filter bar (MonitoringPage) | 1.5 h |
+| Station history chart | 2.5 h |
+| Maintenance filters + assignedTo | 2 h |
+| Workflow execution logging | 3 h |
+| Alert detail modal | 2 h |
+| UsersModule + user management page | 2 d |
+| Dashboard trend charts | 1.5 d |
+| GIS station map (react-leaflet) | 1 d |
+| Workflow scheduling (cron/MQTT triggers) | 3 d |
+| CSV export (alerts + sensor data) | 1.5 d |
+| Live streaming chart (rolling buffer) | 1 d |
+| Password reset flow | 1 d |
+| Backend CI pipeline | 2 h |
+| Expanded test coverage | 3 d |
+
+---
+
+## Architecture Principles — Never Break
+
+1. **All API routes protected by JwtGuard** — no endpoint should be left public except `auth/register`, `auth/login`, `auth/refresh`
+2. **RBAC via RolesGuard + `@Roles()` decorator** — use the `UserRole` enum; never hardcode role strings
+3. **Redis cache always has in-memory fallback** — `app.module.ts` pattern ensures the app starts even if Redis is down
+4. **Sensor list cache must be invalidated on create/update/delete** — see `SensorsService.clearListCache()`
+5. **WebSocket JWT validation on connect** — `RealtimeGateway.handleConnection()` disconnects sockets with invalid tokens
+6. **`station-status` WS event emitted only when `dto.status` is in PATCH body** — do not emit on every update
+7. **All DTOs have `@ApiProperty`** — required for Swagger docs
+8. **`flow-executor.service.ts` must call `validator.validate(graph)` before running** — prevents malformed graphs from crashing the runner
+9. **Frontend apiClient.js handles 401 → auto refresh → retry** — never break this interceptor chain
+10. **`deleteStation` thunk expects the service to return the station `id`** — `stationService.deleteStation(id)` returns `id`, not the object
+
+---
+
+## How to Start the Project
 
 ```bash
-# Start infrastructure
-docker-compose up -d postgres redis mosquitto
+# Full stack (requires Docker)
+cd pfe-project
+docker-compose up --build
 
-# Backend
-cd pfe-backend
-cp .env.example .env  # edit as needed
+# Backend only (dev hot reload)
+cd backend
+cp .env.example .env   # set DATABASE_HOST=localhost, etc.
 npm install
-npm run start:dev     # port 3001
+npm run migration:run
+npm run seed            # optional — loads demo data
+npm run start:dev       # http://localhost:3001
 
-# Frontend
-cd pfe-frontend
-cp .env.example .env  # edit as needed
+# Frontend only (dev)
+cd frontend
 npm install
-npm start             # port 3000
-```
+npm start               # http://localhost:3000
 
-**Required env vars (backend):**
+# Swagger UI
+open http://localhost:3001/api/docs
 
-```
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_USERNAME=postgres
-DATABASE_PASSWORD=postgres
-DATABASE_NAME=aquaflow
-JWT_SECRET=your-secret-key
-JWT_REFRESH_SECRET=your-refresh-secret
-MQTT_BROKER_URL=mqtt://localhost:1883
-FRONTEND_URL=http://localhost:3000
-```
-
-**Required env vars (frontend):**
-
-```
-REACT_APP_API_URL=http://localhost:3001/api
-REACT_APP_WS_URL=http://localhost:3001
-REACT_APP_WORKFLOW_API_URL=http://localhost:3001/api
+# Run backend tests
+cd backend
+npm run test            # unit tests
+npm run test:e2e        # E2E tests
 ```
 
 ---
 
-## WHAT MUST NEVER BE CHANGED
-
-1. The JointJS workflow editor core components (`Blocksidebar`, `FlowCanvas`, `JointPaper`, `PropertiesPanel`, `NodeEditorModal`)
-2. The graph serialization engine (`engine/graphSerializer.js`, `engine/graphDeserializer.js`)
-3. The block registry system (`registry/blockRegistry.js`, `registry/blockFactory.js`)
-4. The existing `WorkflowRunner`, `NodeExecutor`, `ExecutionContext` architecture — only ADD new handlers
-5. The existing entity relationships and column definitions (only add new columns/tables via migrations)
-6. The HashRouter configuration — never switch to BrowserRouter without updating the build/serve setup
-
----
-
-## CONTINUATION INSTRUCTIONS
-
-When given a specific task:
-
-1. Read the relevant existing files before writing any code
-2. Follow the established patterns shown in this document
-3. Write TypeScript for backend, JSX for frontend
-4. Use existing services and slice thunks — do not duplicate
-5. Add `@UseGuards(JwtGuard)` to any new controller
-6. Emit WebSocket events from services when data changes (alerts, sensor updates, station status)
-7. Test your changes against the running backend before declaring done
-8. Never introduce breaking changes to existing module interfaces
-
-You are continuing development on AquaFlow, an existing enterprise industrial water station supervision and automation platform. This is not a new project. Do not rebuild the application. Audit and extend the current real codebase incrementally.
-
-## Project Location
-
-The active workspace is:
-
-`C:\Users\Grous info\Downloads\pfe`
-
-Important subprojects:
-
-- Backend: `pfe-backend`
-- Frontend: `pfe-frontend`
-- Root infrastructure/docs: project root
-
-The originally referenced path `C:\Users\DELL\Downloads\pfe-project` was not present in the previous audit environment.
-
-## Product Context
-
-AquaFlow is an industrial SCADA-like platform for drinking water station supervision. It extends an existing workflow-builder/editor system with:
-
-- React frontend
-- NestJS backend
-- Workflow builder/editor
-- Industrial automation logic
-- Realtime monitoring
-- MQTT sensor integration
-- Dashboards
-- Alerts
-- Maintenance
-- Analytics
-- Reporting
-- Workflow execution
-
-The core architectural rule is: preserve the existing workflow builder/editor and extend it. Do not replace or rebuild it.
-
-## Current Verified Architecture
-
-### Backend
-
-The backend is a NestJS 10 app in `pfe-backend`.
-
-Verified stack:
-
-- NestJS
-- TypeScript
-- TypeORM
-- PostgreSQL
-- JWT / Passport
-- bcrypt
-- Socket.IO
-- MQTT.js
-- class-validator / class-transformer
-
-`main.ts`:
-
-- sets global prefix `/api`
-- defaults backend port to `3001`
-- enables CORS from `FRONTEND_URL`, default `http://localhost:3000`
-- uses global validation pipe
-
-`AppModule` imports:
-
-- `DatabaseModule`
-- `AuthModule`
-- `RealtimeModule`
-- `IotModule`
-- `StationsModule`
-- `SensorsModule`
-- `AlertsModule`
-- `MaintenanceModule`
-- `FlowsModule`
-
-Current entities:
-
-- `User`
-- `Station`
-- `Sensor`
-- `SensorData`
-- `Alert`
-- `Maintenance`
-- `Workflow`
-- `WorkflowExecution`
-- `Notification`
-
-Current APIs include:
-
-- `/api/auth/register`
-- `/api/auth/login`
-- `/api/auth/me`
-- `/api/auth/logout`
-- `/api/stations`
-- `/api/sensors`
-- `/api/sensors/:id/data`
-- `/api/alerts`
-- `/api/alerts/:id/acknowledge`
-- `/api/alerts/:id/resolve`
-- `/api/maintenance`
-- `/api/flows`
-- `/api/flows/execute`
-
-### Frontend
-
-The frontend is a Create React App / Argon Dashboard React app in `pfe-frontend`.
-
-Verified stack:
-
-- React 18
-- React Router v6
-- Redux Toolkit
-- React Redux
-- Reactstrap / Bootstrap / Argon SCSS
-- Axios
-- Socket.IO client
-- JointJS / `@joint/core`
-
-Current Redux slices:
-
-- `auth`
-- `dashboard`
-- `realtime`
-- `stations`
-- `sensors`
-- `alerts`
-- `maintenance`
-
-Current feature modules:
-
-- `auth`
-- `dashboard`
-- `stations`
-- `monitoring`
-- `alerts`
-- `maintenance`
-
-Current routes include:
-
-- `/admin/dashboard`
-- `/admin/builder`
-- `/admin/stations`
-- `/admin/monitoring`
-- `/admin/alerts`
-- `/admin/maintenance`
-- `/auth/login`
-- `/auth/register`
-
-## Current Implementation Status
-
-Implemented or mostly implemented:
-
-- TypeORM database setup.
-- Core entities.
-- JWT register/login/me/logout.
-- Password hashing.
-- JWT guard and roles guard.
-- Station CRUD backend and station list/create/edit frontend.
-- Sensor CRUD backend and monitoring list/create frontend.
-- Alert backend and alert list/ack/resolve frontend.
-- Maintenance backend and maintenance list frontend.
-- Redux store and feature slices.
-- Socket.IO gateway/service and frontend `useSocket`.
-- MQTT client connection/subscription/publish wrapper.
-- Existing generic workflow builder/editor and generic flow execution.
-- Docker Compose for PostgreSQL, Redis, and Mosquitto.
-
-Partially implemented:
-
-- Dashboard uses Redux and realtime hook, but lacks full analytics/live chart depth.
-- Realtime events exist, but socket auth is not validated server-side.
-- MQTT client subscribes and parses messages, but does not delegate messages into `IotService`.
-- `IotService.processSensorData` can save readings and broadcast, but it is not connected to MQTT ingestion.
-- Threshold violations broadcast `threshold-alert`, while frontend listens mostly for `alert-created`.
-- Workflow entities exist, but `/flows` storage is in-memory.
-- Workflow API naming differs from docs (`/flows` in code vs `/workflows` in roadmap).
-- RBAC exists server-side, but frontend role-aware UI is limited.
-
-Missing:
-
-- Refresh token endpoint.
-- TypeORM migrations.
-- Analytics module.
-- Reports module.
-- GIS map module.
-- IoT device management module/UI.
-- Notifications service/UI/channels.
-- Industrial workflow blocks and handlers.
-- Workflow execution logs/persistent workflow management.
-- Technician assignment endpoint/page.
-- Station analytics page.
-- Sensor details/live chart page.
-- Alert details/filters.
-- Frontend `uiSlice`.
-- Automated tests.
-- Backend/frontend Dockerfiles.
-- CI/CD and production deployment hardening.
-
-Known inconsistencies:
-
-- `/admin/builder` imports `BuilderPage` but renders `Test`.
-- Some docs mention backend/API on port `3000`, but real backend defaults to `3001`.
-- Frontend `apiClient` defaults to `http://localhost:3001/api`.
-- Socket room naming requires care: gateway joins `channel:${channel}`.
-- Redis is provisioned but unused.
-- Generated `dist` and `build` artifacts exist in the workspace.
-
-Verified commands from the previous audit:
-
-- Backend type-check succeeded: `npx.cmd tsc --noEmit`
-- Frontend production build succeeded: `npm.cmd run build`
-- Frontend build warnings:
-  - unused imports in `src/components/Headers/Header.js`
-  - unused `BuilderPage` import in `src/routes.js`
-
-## Development Rules
-
-Follow these rules:
-
-- Do not rebuild the project.
-- Do not replace the workflow builder/editor.
-- Do not invent a separate architecture when existing modules can be extended.
-- Verify code before claiming a feature exists.
-- Keep backend changes aligned with NestJS module/service/controller patterns already present.
-- Keep frontend changes aligned with the current Argon Dashboard/Reactstrap/Redux style unless explicitly modernizing a specific area.
-- Prefer small, incremental changes with build verification.
-- Preserve existing routes and APIs unless intentionally migrating with compatibility.
-- Add tests for risky backend services and workflow/MQTT/realtime behavior.
-- Do not commit generated artifacts unless the repository already intentionally tracks them.
-
-## Recommended Next Implementation Priorities
-
-Start with integration fixes before large new modules:
-
-1. Fix `/admin/builder` route to render the real builder.
-2. Add accurate `.env.example` files for backend and frontend.
-3. Add or intentionally remove refresh-token flow.
-4. Validate Socket.IO JWT tokens in the backend gateway.
-5. Wire MQTT messages into `IotService.processSensorData`.
-6. Persist threshold-generated alerts through `AlertsService`.
-7. Normalize realtime event names so backend and frontend agree.
-8. Replace in-memory `FlowsService` storage with TypeORM `Workflow` / `WorkflowExecution`.
-9. Add first industrial workflow blocks and handlers:
-   - `threshold-checker`
-   - `alert-sender`
-   - `maintenance-request`
-   - `mqtt-publisher`
-10. Add focused tests for sensor ingestion, alert creation, and workflow execution.
-
-After those are stable:
-
-1. Complete station details, sensor details, alert details, and maintenance create/assignment UI.
-2. Add GIS map using station coordinates.
-3. Add analytics endpoints and frontend charts.
-4. Add reports/export module.
-5. Add notifications module.
-6. Add IoT device registry/status UI.
-7. Add production deployment hardening.
-
-## Expected Workflow for Future AI Sessions
-
-For each development session:
-
-1. Inspect the relevant files first.
-2. Confirm the current behavior against the audit docs:
-   - `CURRENT_PROJECT_STATE.md`
-   - `FEATURE_IMPLEMENTATION_MATRIX.md`
-   - `NEXT_DEVELOPMENT_STEPS.md`
-3. Make the smallest coherent change.
-4. Update or add tests when behavior changes.
-5. Run verification:
-   - Backend: `npx.cmd tsc --noEmit`
-   - Frontend when touched: `npm.cmd run build`
-6. Update the audit documents if feature status changes.
-7. Summarize exactly what changed and what remains.
-
-## Important Files to Inspect First
-
-Backend:
-
-- `pfe-backend/src/app.module.ts`
-- `pfe-backend/src/main.ts`
-- `pfe-backend/src/database/database.module.ts`
-- `pfe-backend/src/database/entities/*.ts`
-- `pfe-backend/src/auth/*`
-- `pfe-backend/src/realtime/*`
-- `pfe-backend/src/iot/*`
-- `pfe-backend/src/stations/*`
-- `pfe-backend/src/sensors/*`
-- `pfe-backend/src/alerts/*`
-- `pfe-backend/src/maintenance/*`
-- `pfe-backend/src/flows/*`
-- `pfe-backend/src/execution/*`
-
-Frontend:
-
-- `pfe-frontend/src/App.jsx`
-- `pfe-frontend/src/routes.js`
-- `pfe-frontend/src/store/store.js`
-- `pfe-frontend/src/store/slices/*.js`
-- `pfe-frontend/src/services/*.js`
-- `pfe-frontend/src/hooks/useSocket.js`
-- `pfe-frontend/src/data/blocks.js`
-- `pfe-frontend/src/views/builder/BuilderPage.jsx`
-- `pfe-frontend/src/components/Blocksidebar/*`
-- `pfe-frontend/src/components/canvas/*`
-- `pfe-frontend/src/components/nodes/*`
-- `pfe-frontend/src/modules/*`
-
-## Final Reminder
-
-This is an existing AquaFlow codebase with real partial implementation. Continue incrementally, preserve what works, close integration gaps first, and extend the workflow system rather than replacing it.
+## Recommended First Session Task Order
+
+Start with the quickest wins that unblock the most:
+
+1. **Fix 1** (15 min) — Add `/api/health` endpoint → fixes Docker healthcheck
+2. **Fix 2** (5 min) — Wire `api` block to `HttpRequestHandler` → removes silent mock
+3. **Fix 4** (30–45 min) — Create notifications page + route → fixes dead navbar link
+4. **P2-A** (1.5 h) — Add sensor filter bar to `MonitoringPage`
+5. **P2-C** (2 h) — Add maintenance filters + `assignedTo` to `MaintenancePage`
+6. **P2-E** (2 h) — Add alert detail modal to `AlertsPage`
+7. **Fix 3** (1.5 h) — Wire `notification` block to `NotificationsService`
+8. **P2-D** (3 h) — Persist workflow execution to DB
+
+After completing these 8 tasks, the platform will be ~80% complete with all broken items fixed and the core partial features done.

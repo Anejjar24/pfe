@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(not exist *)",
+      "Bash(mkdir -p \"/mnt/c/Users/DELL/Downloads/pfe-project/frontend/src/modules/users/pages\")"
+    ]
+  }
+}

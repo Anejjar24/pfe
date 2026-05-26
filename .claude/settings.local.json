@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(not exist *)",
-      "Bash(mkdir -p \"/mnt/c/Users/DELL/Downloads/pfe-project/frontend/src/modules/users/pages\")"
+      "Bash(mkdir -p \"/mnt/c/Users/DELL/Downloads/pfe-project/frontend/src/modules/users/pages\")",
+      "Bash(ls \"C:\\\\Users\\\\DELL\\\\Downloads\\\\pfe-project\\\\\"*.md 2>/dev/null || dir /b \"C:\\\\Users\\\\DELL\\\\Downloads\\\\pfe-project\\\\*.md\")"
     ]
   }
 }

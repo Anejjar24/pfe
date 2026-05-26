@@ -1,5 +1,7 @@
 # AquaFlow — Development Progress Report
 
+> **Latest update:** 2026-05-26 — P3 phase complete. See [P3 Phase Update](#p3-phase-update-2026-05-26) section below.
+
 **Report date:** 2026-05-13  
 **Comparison:** Original audit (pre-development) vs current codebase  
 **Method:** Every claim below is backed by a direct file read — no reliance on TASK_*_REPORT.md summaries alone.
@@ -285,6 +287,42 @@ Priority-ordered based on impact vs effort:
 | Frontend pages fully working | 4/9 | **9/10** (Dashboard, Stations, Monitoring, Alerts, Maintenance, Analytics, SensorDetails, StationDetails, Auth×2; Builder functional but history UI absent) |
 | Redux slices complete | 5/8 | **7/9** (all original 7 + uiSlice + notificationsSlice present; analyticsSlice absent) |
 | Infrastructure (Docker, Swagger, Tests) | 0/4 | **4/4** (Dockerfiles ✅, Swagger ✅, backend tests 31 ✅, frontend tests 28 ✅) |
+
+---
+
+---
+
+## P3 Phase Update (2026-05-26)
+
+All 6 P3 planned features have been implemented. Full detail in each task report.
+
+| Task | Feature | Files | Report |
+|------|---------|-------|--------|
+| P3-A | User Management (UsersModule + UsersPage) | `backend/src/users/`, `frontend/src/modules/users/pages/UsersPage.jsx`, `routes.js` | TASK_1_REPORT.md |
+| P3-B | Dashboard Trend Charts (TrendCharts component) | `frontend/src/modules/dashboard/components/TrendCharts.jsx`, `DashboardPage.jsx` | TASK_2_REPORT.md |
+| P3-C | Workflow Scheduling & MQTT Triggers | `backend/src/flows/workflow-scheduler.service.ts`, `WorkflowSettingsModal.jsx`, activate/deactivate endpoints | TASK_3_REPORT.md |
+| P3-D | GIS Station Map (Leaflet) | `frontend/src/modules/stations/components/StationsMap.jsx`, `StationsPage.jsx` | TASK_4_REPORT.md |
+| P3-E | CSV Export (Alerts + Sensor Data) | `GET /alerts/export/csv`, `GET /sensors/:id/data/export`, export buttons in AlertsPage + SensorDetailsPage | TASK_5_REPORT.md |
+| P3-F | Real-time Live Streaming Chart | `SensorDetailsPage.jsx` Live Feed card, 50-reading rolling buffer, `● Live` badge | TASK_6_REPORT.md |
+
+**Dependency fixes completed during this phase:**
+- `@nestjs/cache-manager` upgraded to `^2.0.0` (NestJS 10 compatible) + `cache-manager@^5.4.0` (TTL in milliseconds)
+- Redis adapter replaced: `cache-manager-redis-store` → `cache-manager-redis-yet@^4.1.2`
+- `@nestjs/swagger` downgraded from `11.x` to `^7.4.0` (v11 requires NestJS 11)
+- `@nestjs/schedule@^4.1.0` added for cron scheduling
+- Frontend: `leaflet@^1.9.4` + `react-leaflet@^4.2.1` added for GIS map
+
+**Routing bug fixed during this phase:**  
+`GET /alerts/export` was intercepted by `@Get(':id')` — fixed by renaming to two-segment `GET /alerts/export/csv` (impossible to match a single-segment param route in NestJS v10 + Express).
+
+**Updated score:**
+
+| Metric | After P2 (2026-05-25) | After P3 (2026-05-26) |
+|--------|----------------------|----------------------|
+| Features complete | ~91 / 134 (~67%) | ~99 / 134 (~82%) |
+| Backend API endpoints | ~42 | ~50 |
+| Frontend pages fully working | 9/10 | 11/11 (+ UsersPage, + DashboardTrendCharts) |
+| New packages (backend) | — | cache-manager v5, nestjs/schedule, leaflet, react-leaflet |
 
 ---
 

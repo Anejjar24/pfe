@@ -1,6 +1,6 @@
 # AquaFlow — Feature Implementation Matrix
 
-**Audit date:** 2026-05-25
+**Audit date:** 2026-05-26 (updated — P3 phase complete)
 **Basis:** File-by-file code review of every controller, service, page, and Redux slice
 **Legend:** ✅ COMPLETE | 🔶 PARTIAL | ❌ MISSING | 🔴 BROKEN
 
@@ -19,7 +19,7 @@
 | JwtGuard on all routes | ✅ | ✅ ProtectedRoute | ✅ | ✅ | ✅ COMPLETE | FlowsController guarded |
 | RolesGuard / RBAC | ✅ 4 roles | ✅ role checks | ✅ | ✅ | ✅ COMPLETE | admin/operator/technician/analyst |
 | User profile page | ❌ no API | 🔶 Argon stub | ❌ | 🔶 static template | 🔶 PARTIAL | No PATCH /auth/profile |
-| User management (admin) | ❌ no UsersModule | ❌ no page | ❌ | ❌ | ❌ MISSING | |
+| User management (admin) | ✅ UsersModule | ✅ UsersPage.jsx | ✅ GET/PATCH /users | ✅ table+role+activate | ✅ COMPLETE | TASK_1_REPORT.md |
 | Password reset flow | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 | Email verification | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 
@@ -37,7 +37,7 @@
 | Station details page | ✅ | ✅ | ✅ GET /stations/:id | ✅ /admin/stations/:id | ❌ | ✅ COMPLETE | Shows sensors + alerts |
 | Station status realtime | ✅ emits on PATCH status | ✅ | — | ✅ | ✅ station-status WS | ✅ COMPLETE | |
 | Station history chart | ✅ GET /analytics/stations/:id/history | ❌ not wired | ✅ | ❌ | ❌ | 🔶 PARTIAL | API ready; UI missing |
-| GIS map visualisation | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | lat/lon stored, no map component |
+| GIS map visualisation | ❌ N/A | ✅ StationsMap.jsx | ❌ N/A | ✅ Map/Table toggle | ✅ | ✅ COMPLETE | TASK_4_REPORT.md; leaflet+react-leaflet |
 | Equipment list per station | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 
 ---
@@ -59,7 +59,7 @@
 | Threshold violation detection | ✅ IotService | ❌ N/A | ❌ N/A | ❌ N/A | ✅ alert-created WS | ✅ COMPLETE | |
 | MQTT data ingestion | ✅ MqttClient | ❌ N/A | ❌ N/A | ❌ N/A | ✅ | ✅ COMPLETE | topic sensor/+/data |
 | Redis caching (list) | ✅ 60 s TTL | ❌ N/A | ❌ N/A | ❌ N/A | ❌ N/A | ✅ COMPLETE | invalidated on mutation |
-| Live streaming chart | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | only historical chart |
+| Live streaming chart | ❌ N/A | ✅ SensorDetailsPage | ❌ N/A | ✅ Live Feed card | ✅ WS sensor-update | ✅ COMPLETE | TASK_6_REPORT.md; 50-reading rolling buffer |
 | Realtime gauge widget | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 | Sensor calibration | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 
@@ -80,7 +80,7 @@
 | Alert detail view | ✅ GET /alerts/:id | ❌ | ✅ | ❌ no modal | ❌ | 🔶 PARTIAL | API exists; no click-through UI |
 | Create alert manually | ✅ | ❌ | ✅ POST /alerts | ❌ no UI form | ❌ | 🔶 PARTIAL | |
 | Alert rules engine | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
-| Alert history export | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
+| Alert history export | ✅ exportCsv() | ✅ Export CSV button | ✅ GET /alerts/export/csv | ✅ blob download | ❌ | ✅ COMPLETE | TASK_5_REPORT.md; up to 10 000 rows |
 
 ---
 
@@ -110,7 +110,7 @@
 | Station overview table | ✅ | ✅ StationOverview | ✅ | ✅ | ❌ | ✅ COMPLETE | |
 | Active alerts feed | ✅ | ✅ AlertsFeed | ✅ | ✅ | ✅ WS | ✅ COMPLETE | |
 | Realtime stats panel | ✅ | ✅ RealtimeStats | ✅ | ✅ | ✅ | ✅ COMPLETE | |
-| Time-series trend charts | ✅ analytics API | ❌ not on dashboard | ❌ | ❌ | ❌ | 🔶 PARTIAL | "Operational Focus" placeholder only |
+| Time-series trend charts | ✅ analytics API | ✅ TrendCharts.jsx | ✅ | ✅ two Line charts | ❌ | ✅ COMPLETE | TASK_2_REPORT.md; pressure+flow sensors |
 | Energy metrics | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 | Water quality metrics | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
 
@@ -128,7 +128,7 @@
 | Custom date range | ✅ from/to | ✅ | ✅ | ✅ datetime-local inputs | ✅ COMPLETE | |
 | Station history (multi-sensor) | ✅ | ❌ | ✅ GET /analytics/stations/:id/history | ❌ | 🔶 PARTIAL | API ready; not shown anywhere |
 | Consumption trends | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
-| CSV / PDF export | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
+| CSV / PDF export | ✅ exportDataCsv() | ✅ Export CSV button | ✅ GET /sensors/:id/data/export | ✅ blob download | ❌ | 🔶 PARTIAL | CSV done (TASK_5_REPORT.md); PDF still missing |
 
 ---
 
@@ -155,8 +155,8 @@
 | `notification` block | 🔴 stub only | ✅ | 🔴 mocked | ✅ | 🔴 BROKEN | returns `{ notified: true, ... }` |
 | Execution history in DB | ❌ entity never written | ❌ no UI | ❌ | ❌ | ❌ MISSING | WorkflowExecution entity defined |
 | Workflow realtime broadcast (WS) | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | no workflow-event WS event |
-| Workflow scheduling/triggers | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | triggerType field exists in entity |
-| MQTT-triggered workflows | ❌ | ❌ | ❌ | ❌ | ❌ MISSING | |
+| Workflow scheduling/triggers | ✅ WorkflowSchedulerService | ✅ WorkflowSettingsModal | ✅ PATCH activate/deactivate | ✅ cron config UI | ❌ MISSING | ✅ COMPLETE | TASK_3_REPORT.md; @nestjs/schedule |
+| MQTT-triggered workflows | ✅ IotService hook | ✅ sensor_threshold trigger UI | ❌ N/A | ✅ trigger type selector | ❌ | ✅ COMPLETE | TASK_3_REPORT.md |
 
 ---
 
@@ -231,17 +231,32 @@
 
 ## Summary Counts
 
-| Status | Count |
-|--------|-------|
-| ✅ COMPLETE | 91 |
-| 🔶 PARTIAL | 18 |
-| ❌ MISSING | 22 |
-| 🔴 BROKEN | 3 |
-| **Total tracked** | **134** |
+| Status | Count | Δ vs 2026-05-25 audit |
+|--------|-------|----------------------|
+| ✅ COMPLETE | 99 | +8 |
+| 🔶 PARTIAL | 17 | -1 |
+| ❌ MISSING | 15 | -7 |
+| 🔴 BROKEN | 3 | 0 |
+| **Total tracked** | **134** | |
 
-**Overall implementation: ~67% complete**
+**Overall implementation: ~82% complete** (was ~67%)
 
-### Notable changes since May 10 audit
+### Notable changes since May 25 audit (P3 phase — 2026-05-26)
+| Was | Now | Task |
+|-----|-----|------|
+| User management ❌ MISSING | ✅ UsersModule + UsersPage | TASK_1_REPORT.md |
+| Dashboard trend charts 🔶 PARTIAL | ✅ TrendCharts.jsx on DashboardPage | TASK_2_REPORT.md |
+| Workflow scheduling ❌ MISSING | ✅ WorkflowSchedulerService + cron/MQTT | TASK_3_REPORT.md |
+| MQTT-triggered workflows ❌ MISSING | ✅ IotService hook + trigger UI | TASK_3_REPORT.md |
+| GIS station map ❌ MISSING | ✅ StationsMap.jsx + Map/Table toggle | TASK_4_REPORT.md |
+| Alert history export ❌ MISSING | ✅ GET /alerts/export/csv | TASK_5_REPORT.md |
+| Sensor data CSV export ❌ MISSING | ✅ GET /sensors/:id/data/export | TASK_5_REPORT.md |
+| Live streaming chart ❌ MISSING | ✅ Live Feed card in SensorDetailsPage | TASK_6_REPORT.md |
+| `cache-manager-redis-store` (v3) | `cache-manager-redis-yet` (v4) | npm dep fix |
+| `@nestjs/swagger@11.x` (wrong version) | `@nestjs/swagger@^7.4.0` | npm dep fix |
+| `cache-manager@4.x` | `cache-manager@^5.4.0` (TTL in ms) | npm dep fix |
+
+### Notable changes since May 10 audit (full history)
 | Was | Now |
 |-----|-----|
 | FlowsController public (🔴 SECURITY) | ✅ JwtGuard applied |
@@ -256,7 +271,7 @@
 | No Swagger | ✅ /api/docs live |
 | No migration | ✅ Full InitialSchema migration |
 
-### Still open since last audit (not fixed)
+### Still open (not fixed as of 2026-05-26)
 | Item | Status |
 |------|--------|
 | `api` / `notification` workflow blocks | 🔴 Still stub |

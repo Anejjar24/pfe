@@ -440,9 +440,9 @@ getExecutions(@Param('id') id: string) {
 
 ---
 
-## P3 — PLANNED FEATURES (not yet implemented)
+## P3 — PLANNED FEATURES ✅ ALL COMPLETE (2026-05-26)
 
-### P3-A: UsersModule + User Management Page
+### P3-A: UsersModule + User Management Page ✅ COMPLETE — see TASK_1_REPORT.md
 
 **Backend — new module `backend/src/users/`:**
 - `GET /api/users` — paginated list (admin only)
@@ -460,7 +460,7 @@ getExecutions(@Param('id') id: string) {
 
 ---
 
-### P3-B: Dashboard Trend Charts
+### P3-B: Dashboard Trend Charts ✅ COMPLETE — see TASK_2_REPORT.md
 
 **File to create:** `frontend/src/modules/dashboard/components/TrendCharts.jsx`
 On mount, call `analyticsService.getOverview()` to get sensor counts, then `analyticsService.getSensorStats(firstPressureSensorId, { from: 24hAgo })` and `getSensorStats(firstFlowSensorId, ...)`. Render two `<Line>` charts side by side.
@@ -472,7 +472,7 @@ Replace the "Operational Focus" `<Card>` placeholder with `<TrendCharts />`.
 
 ---
 
-### P3-C: Workflow Scheduling & MQTT-Triggered Execution
+### P3-C: Workflow Scheduling & MQTT-Triggered Execution ✅ COMPLETE — see TASK_3_REPORT.md
 
 **Backend changes:**
 1. `npm install @nestjs/schedule`
@@ -487,7 +487,7 @@ Replace the "Operational Focus" `<Card>` placeholder with `<TrendCharts />`.
 
 ---
 
-### P3-D: GIS Map for Stations
+### P3-D: GIS Map for Stations ✅ COMPLETE — see TASK_4_REPORT.md
 
 **Frontend changes:**
 1. `npm install leaflet react-leaflet`
@@ -499,7 +499,7 @@ Replace the "Operational Focus" `<Card>` placeholder with `<TrendCharts />`.
 
 ---
 
-### P3-E: CSV Export for Alerts and Sensor Data
+### P3-E: CSV Export for Alerts and Sensor Data ✅ COMPLETE — see TASK_5_REPORT.md
 
 **Backend:**
 1. `GET /api/alerts/export?format=csv&from=&to=` — stream CSV
@@ -513,7 +513,7 @@ Replace the "Operational Focus" `<Card>` placeholder with `<TrendCharts />`.
 
 ---
 
-### P3-F: Real-time Live Chart (Streaming Sparkline)
+### P3-F: Real-time Live Chart (Streaming Sparkline) ✅ COMPLETE — see TASK_6_REPORT.md
 
 In `SensorDetailsPage` or `MonitoringPage`, maintain a rolling 50-reading buffer in React state. Append each `sensor-update` WS event for the selected sensor. Render as a `<Line>` chart that scrolls in real time.
 
@@ -602,9 +602,9 @@ jobs:
 | **1** | P2-A (sensor filter bar) + P2-C (maintenance filter + assignedTo) |
 | **2** | P2-B (station history chart) + P2-E (alert detail modal) |
 | **2** | P2-D (workflow execution logging) |
-| **3** | P3-A (UsersModule + user page) + P3-B (dashboard trend charts) |
-| **4** | P3-C (workflow scheduling) + P3-D (GIS map) |
-| **5** | P3-E (CSV export) + P3-F (live chart) + P4-A (backend CI) |
+| **3** | ~~P3-A (UsersModule + user page) + P3-B (dashboard trend charts)~~ ✅ DONE |
+| **4** | ~~P3-C (workflow scheduling) + P3-D (GIS map)~~ ✅ DONE |
+| **5** | ~~P3-E (CSV export) + P3-F (live chart)~~ ✅ DONE + P4-A (backend CI) |
 
 ---
 
@@ -621,10 +621,11 @@ jobs:
 | P2-C: Maintenance filters + assignedTo | 🟠 High | 2 h | Completes maintenance UI |
 | P2-D: Workflow execution logging | 🟠 High | 3 h | Core feature completeness |
 | P2-E: Alert detail modal | 🟠 High | 2 h | Completes alert management |
-| P3-A: Users module | 🟡 Medium | 2 d | Admin capability |
-| P3-B: Dashboard trend charts | 🟡 Medium | 1.5 d | First-screen value |
-| P3-C: Workflow scheduling | 🟡 Medium | 3 d | Core automation use case |
-| P3-D: GIS station map | 🟡 Medium | 1 d | Visual value |
-| P3-E: CSV export | 🟡 Medium | 1.5 d | Ops team request |
+| P3-A: Users module | ✅ Done | 2 d | Admin capability |
+| P3-B: Dashboard trend charts | ✅ Done | 1.5 d | First-screen value |
+| P3-C: Workflow scheduling | ✅ Done | 3 d | Core automation use case |
+| P3-D: GIS station map | ✅ Done | 1 d | Visual value |
+| P3-E: CSV export | ✅ Done | 1.5 d | Ops team request |
+| P3-F: Live streaming chart | ✅ Done | 1 d | Real-time UX |
 | P4-A: Backend CI pipeline | 🟢 Low | 2 h | Dev process |
 | P4-C: Test coverage | 🟢 Low | 3 d | Long-term quality |

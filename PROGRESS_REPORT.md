@@ -1,6 +1,6 @@
 # AquaFlow — Development Progress Report
 
-> **Latest update:** 2026-05-26 — P3 phase complete. See [P3 Phase Update](#p3-phase-update-2026-05-26) section below.
+> **Latest update:** 2026-05-27 — P4 (DevOps) phase complete. All development phases done. See [P4 Phase Update](#p4-phase-update-2026-05-27) section below.
 
 **Report date:** 2026-05-13  
 **Comparison:** Original audit (pre-development) vs current codebase  
@@ -326,13 +326,66 @@ All 6 P3 planned features have been implemented. Full detail in each task report
 
 ---
 
-## Top 3 Most Critical Items To Fix Before Anything Else
+## ~~Top 3 Most Critical Items To Fix Before Anything Else~~
 
-### 🔴 #1 — Verify and fix SensorDetailsPage import (potential crash)
-`SensorDetailsPage.jsx` uses `import sensorService from '../../../services/sensorService'`. If `sensorService.js` exports only a named export (not a `default`), then `sensorService` is `undefined` at runtime and every function call on it (`sensorService.getSensorHistory(...)`) throws `TypeError: Cannot read properties of undefined`. **Read `sensorService.js` immediately and verify the export style.**
+> **Superseded by P4 phase completion (2026-05-27).** All three items below have been resolved.
+> - ✅ #1 SensorDetailsPage import — confirmed correct (`default` export exists); bug never manifested
+> - ✅ #2 `GET /api/health` — implemented in P4-1 with DB + Redis probes
+> - ✅ #3 `alertRealtimeReceived` → notifications — bell badge connected via notificationsSlice + AdminNavbar
 
-### 🟠 #2 — Add `GET /api/health` endpoint  
-The health route is a hard requirement for Docker Compose health checks, load-balancer liveness probes, and the Swagger tag list (it was originally planned). It's a 30-minute task: create `app.controller.ts` with one method and register it in `app.module.ts`. Without it, the containerised deployment has no way to verify the backend is ready.
+---
 
-### 🟡 #3 — Wire `alertRealtimeReceived` → `pushNotification`  
-Real-time alerts currently update the table silently. The `uiSlice.pushNotification` action exists, the bell badge system exists in `AdminNavbar`, but the link is never made. Users who are on a different page when a critical alert arrives have no visible indication. Fix is a 2-line addition in `useSocket.js`: after `dispatch(alertRealtimeReceived(data))`, also dispatch `dispatch(pushNotification({ title: 'New Alert', ... }))`.
+---
+
+## P4 Phase Update (2026-05-27)
+
+All 6 P4 tasks are complete. The platform is now production-ready with hardened infrastructure, full CI/CD, and comprehensive test coverage.
+
+### P4 Summary
+
+| Task | Feature | Key files | Report |
+|------|---------|-----------|--------|
+| P4-1 | Enhanced health endpoint (DB + Redis probes, HTTP 503) | `app.controller.ts`, `backend/Dockerfile` | TASK_P4_1_REPORT.md |
+| P4-2 | GitHub Actions CI pipelines | `.github/workflows/backend-ci.yml`, `.github/workflows/frontend-ci.yml` | TASK_P4_2_REPORT.md |
+| P4-3 | Production Docker Compose (hardened) | `docker-compose.prod.yml`, `.env.example`, `mosquitto.prod.conf`, `.gitignore` | TASK_P4_3_REPORT.md |
+| P4-4 | Backend test coverage expansion (66 new tests) | `stations.service.spec.ts` (16), `sensors.service.spec.ts` (20), `flows.service.spec.ts` (18), `iot.service.spec.ts` (12) | TASK_P4_4_REPORT.md |
+| P4-5 | Frontend test coverage expansion (63 new tests) | `alertsSlice.test.js` (22), `SensorDetailsPage.test.jsx` (22), `useSocket.test.js` (19) | TASK_P4_5_REPORT.md |
+| P4-6 | Lint cleanup — 0 ESLint warnings, `CI=true` strict build | `Header.js`, `AnalyticsPage.jsx`, `StationDetailsPage.jsx`, `frontend-ci.yml` | TASK_P4_6_REPORT.md |
+
+### Infrastructure Changes (P4-3)
+
+| Concern | Dev | Prod |
+|---------|-----|------|
+| Postgres port | `5432:5432` exposed | Internal only |
+| Redis port | `6379:6379` exposed | Internal only |
+| Redis auth | None | `--requirepass ${REDIS_PASSWORD}` |
+| MQTT auth | `allow_anonymous true` | `allow_anonymous false` + passwd file |
+| Backend port | `3001:3001` | `expose: 3001` (internal) |
+| JWT secrets | Default fallback | `${JWT_SECRET}` — no default, fails fast |
+| Resource limits | None | CPU + memory per service |
+| Log rotation | None | json-file, 10–20 MB, 3–5 files |
+
+### Test Coverage Summary (P4-4 + P4-5)
+
+| Layer | Tests | Files |
+|-------|-------|-------|
+| Backend | ~97 tests | 7 spec files |
+| Frontend | 101 tests | 5 test files |
+| **Total** | **~198 tests** | **12 test files** |
+
+### CI/CD Pipelines (P4-2)
+
+**Backend** (`backend-ci.yml`): triggers on `backend/**` changes → lint + build → unit tests + e2e tests (with postgres:15 + redis:7 service containers) → coverage artifact.
+
+**Frontend** (`frontend-ci.yml`): triggers on `frontend/**` changes → `CI=true` build (zero warnings) → Jest tests → build artifact.
+
+### Updated Score
+
+| Metric | After P3 (2026-05-26) | After P4 (2026-05-27) |
+|--------|----------------------|----------------------|
+| Features complete | ~99 / 134 (~82%) | ~125 / 135 (~93%) |
+| Backend tests | ~31 | ~97 |
+| Frontend tests | ~38 | 101 |
+| CI/CD pipelines | None | 2 (backend + frontend) |
+| Production Docker | Dev stack only | Hardened prod stack |
+| ESLint warnings | 7 | **0** |

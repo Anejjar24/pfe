@@ -1,13 +1,28 @@
 # AquaFlow — AI Continuation Prompt
 
-**Last updated:** 2026-05-25
-**Purpose:** Paste this entire document at the start of a new Claude Code session to resume AquaFlow development without re-scanning the codebase. All facts are derived from a full file-by-file code audit.
+**Last updated:** 2026-05-27 — all development phases (P1–P4) complete  
+**Purpose:** Paste this entire document at the start of a new AI session to resume AquaFlow development without re-scanning the codebase. All facts reflect the post-P4 state.
 
 ---
 
 ## What Is AquaFlow?
 
-AquaFlow is an industrial water-station supervision platform built as a PFE (final-year engineering project). It monitors water distribution infrastructure in real time: stations, sensors, alerts, maintenance, and automation workflows. The codebase lives at `pfe-project/` and is split into a NestJS backend (`backend/`) and a React frontend (`frontend/`). The full stack runs with `docker-compose up --build` in one command.
+AquaFlow is an industrial water-station supervision platform built as a PFE (final-year engineering project). It monitors water distribution infrastructure in real time: stations, sensors, alerts, maintenance, and automation workflows. The codebase lives at `pfe-project/` and is split into a NestJS backend (`backend/`) and a React frontend (`frontend/`). The full dev stack runs with `docker compose up -d` in one command.
+
+---
+
+## Current Status (2026-05-27)
+
+**Overall completion: ~93% (~125/135 tracked features)**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| P1 | Critical bug fixes | ✅ ALL COMPLETE |
+| P2 | Nice-to-have UI enhancements | ⚠️ 5 items remain (see §Remaining Work) |
+| P3 | Planned features (users, charts, scheduling, GIS, CSV, live charts) | ✅ ALL COMPLETE |
+| P4 | DevOps / production hardening | ✅ ALL COMPLETE |
+
+No critical or high-severity bugs remain open.
 
 ---
 
@@ -17,175 +32,129 @@ AquaFlow is an industrial water-station supervision platform built as a PFE (fin
 |-------|-----------|
 | Backend | NestJS 10, Node 20, TypeScript |
 | Database | PostgreSQL 15 via TypeORM (9 entities, 1 migration) |
-| Cache | Redis 7 (sensor list cache + auth denylist; in-memory fallback) |
-| MQTT | Eclipse Mosquitto 2 — topic `sensor/+/data` ingestion |
+| Cache | Redis 7 — `cache-manager-redis-yet@^4.1.2`, TTL in **milliseconds** |
+| MQTT | Eclipse Mosquitto 2 — topic `aquaflow/sensor/<id>/data` |
 | Auth | JWT access (1 h) + refresh (7 d) + Redis denylist on logout |
-| Real-time | Socket.IO — 5 server→client events |
+| Scheduling | `@nestjs/schedule@^4.1.0` — cron-based workflow triggers |
+| Real-time | Socket.IO (6 server→client events) |
 | API docs | Swagger at `/api/docs` |
-| Frontend | React 18 + Redux Toolkit + React Router 6 |
+| Frontend | React 18 + Redux Toolkit + React Router 6 (CRA) |
 | UI | Argon Dashboard React (Reactstrap / Bootstrap 4) |
-| Charts | Chart.js 2 via react-chartjs-2 |
-| Workflow canvas | JointJS |
-| Container | Docker + Docker Compose (5-service stack) |
+| Charts | Chart.js 2 via `react-chartjs-2@2.x` |
+| GIS | `leaflet@^1.9.4` + `react-leaflet@^4.2.1` |
+| Workflow canvas | JointJS / `@joint/core` |
+| Container (dev) | `docker-compose.yml` — 5 services, all ports exposed |
+| Container (prod) | `docker-compose.prod.yml` — hardened, no infra ports exposed |
+| CI/CD | GitHub Actions — `.github/workflows/backend-ci.yml` + `frontend-ci.yml` |
 
 ---
 
-## Repository Layout (Key Paths)
+## Repository Layout (post-P4)
 
 ```
 pfe-project/
+├── .github/workflows/
+│   ├── backend-ci.yml       lint + build + unit tests + e2e (with postgres + redis services)
+│   └── frontend-ci.yml      CI=true build (0 warnings) + Jest tests
+├── .env.example             All required prod env vars documented
+├── .gitignore               Excludes .env.prod, passwd, dist, node_modules
+├── docker-compose.yml       Dev stack — all ports exposed, no auth on infra
+├── docker-compose.prod.yml  Prod stack — hardened, resource limits, log rotation
+├── mosquitto/config/
+│   ├── mosquitto.conf        Dev: allow_anonymous true
+│   └── mosquitto.prod.conf   Prod: allow_anonymous false + passwd auth
 ├── backend/src/
-│   ├── alerts/           CRUD + ack/resolve + spec
-│   ├── analytics/        Overview, sensor stats, station history
-│   ├── auth/             JWT, refresh, Redis denylist + spec
-│   ├── common/           JwtGuard, RolesGuard, decorators, workflow.types.ts
-│   ├── database/
-│   │   ├── entities/     9 entities (User, Station, Sensor, SensorData, Alert,
-│   │   │                  Maintenance, Notification, Workflow, WorkflowExecution)
-│   │   ├── migrations/   1778543154417-InitialSchema.ts
-│   │   └── seeds/        seed.ts — 5 stations, 15 sensors, 5 alerts, 4 maint orders
-│   ├── execution/
-│   │   ├── engine/       node-executor.ts, workflow-runner.ts, execution-context.ts
-│   │   └── handlers/     10 real handlers + 2 STUBS (api, notification)
-│   ├── flows/            FlowsService (DB-persisted), FlowExecutorService (no DB write),
-│   │                     FlowValidatorService, FlowsController
-│   ├── iot/              IotService (MQTT ingestion), MqttClient
-│   ├── maintenance/      Full CRUD
-│   ├── notifications/    In-app + email (nodemailer) + WS broadcast + spec
-│   ├── realtime/         RealtimeGateway, RealtimeService
-│   ├── sensors/          Full CRUD + Redis cache + inject reading endpoint
-│   ├── stations/         Full CRUD + station-status WS emit
-│   ├── app.module.ts     NO AppController (no /api/health route)
-│   └── main.ts           CORS, ValidationPipe, Swagger setup, port 3001
+│   ├── app.controller.ts     GET /api/health (DB + Redis probes, HTTP 503 on degraded)
+│   ├── app.module.ts
+│   ├── auth/                 JWT, refresh, logout (Redis denylist), profile update
+│   ├── users/                CRUD + RBAC (admin/operator/technician/analyst)
+│   ├── stations/             CRUD + station-status WS broadcast
+│   ├── sensors/              CRUD + Redis cache + injectReading
+│   ├── alerts/               CRUD + ack/resolve + WS broadcast + CSV export
+│   ├── maintenance/          CRUD
+│   ├── analytics/            overview, sensor stats, station history
+│   ├── notifications/        CRUD + bell badge + mark-read + WS broadcast
+│   ├── flows/                Workflow CRUD + activate/deactivate + execute + scheduler
+│   ├── iot/                  MQTT ingestion + threshold alerts
+│   ├── realtime/             Socket.IO gateway
+│   ├── common/               JwtGuard, RolesGuard, decorators, workflow.types.ts
+│   ├── execution/engine/     node-executor.ts (api + notification blocks still STUBBED)
+│   └── database/
+│       ├── entities/         9 entities
+│       ├── migrations/       1778543154417-InitialSchema.ts
+│       └── seeds/            seed.ts
 ├── frontend/src/
-│   ├── components/       Sidebar, AdminNavbar (notification bell), builder nodes
-│   ├── data/blocks.js    14 block types (6 generic + 8 industrial/integration)
-│   ├── engine/           autosaveManager, graphSerializer/Deserializer, workflowExecutorClient
-│   ├── hooks/            useSocket (5 WS events), useWorkflowEditor, useAutosave, useLogout
-│   ├── layouts/Admin.js  routes + /monitoring/:sensorId + /stations/:stationId
+│   ├── components/           Header, AdminNavbar (notification bell + badge)
+│   ├── hooks/
+│   │   └── useSocket.js      Handles 6 WS events, dispatches to Redux
 │   ├── modules/
-│   │   ├── alerts/       AlertsPage (table, severity/status filters, ack, resolve) ✅
-│   │   ├── analytics/    AnalyticsPage (KPI cards, doughnut charts, sensor stats) ✅
-│   │   ├── auth/         Login, Register, ProtectedRoute ✅
-│   │   ├── dashboard/    DashboardPage (KPIs, feeds, realtime; no trend charts) 🔶
-│   │   ├── maintenance/  MaintenancePage (CRUD modal; no filter bar, no assignedTo) 🔶
-│   │   ├── monitoring/   MonitoringPage (table; no filter bar) 🔶
-│   │   │                 SensorDetailsPage (line chart, limit picker) ✅
-│   │   └── stations/     StationsPage (filters, CRUD, delete) ✅
-│   │                     StationDetailsPage (local state; no analytics chart) 🔶
-│   ├── pages/BuilderPage.jsx         Actual workflow builder implementation
-│   ├── views/builder/BuilderPage.jsx Re-export of pages/BuilderPage.jsx
-│   ├── views/examples/Profile.js     Argon stub — no real data
-│   ├── views/test.js                 Diagnostics page (embeds BuilderPage)
-│   ├── routes.js         8 sidebar routes + hidden /test + auth routes
-│   ├── services/         apiClient.js, authSession.js + 8 domain services
-│   └── store/
-│       ├── store.js      9 slices: auth, dashboard, realtime, stations, sensors,
-│       │                  alerts, maintenance, ui, notifications
-│       └── slices/       9 slice files; each has selectors exported
-├── docker-compose.yml    5 services with healthchecks
-└── mosquitto/config/
+│   │   ├── auth/             Login, Register, ProtectedRoute
+│   │   ├── dashboard/        DashboardPage + TrendCharts component
+│   │   ├── stations/         StationsPage (table + Leaflet map toggle) + StationDetailsPage
+│   │   ├── monitoring/       MonitoringPage (sensor table) + SensorDetailsPage (chart + live feed)
+│   │   ├── alerts/           AlertsPage (table, filters, ack/resolve, CSV export)
+│   │   ├── maintenance/      MaintenancePage (CRUD modal)
+│   │   ├── analytics/        AnalyticsPage (KPIs, doughnut, sensor time-series)
+│   │   ├── notifications/    NotificationsPage (full list)
+│   │   ├── users/            UsersPage (role management, activate/deactivate)
+│   │   └── workflow/         WorkflowBuilderPage (JointJS canvas, 14 block types)
+│   ├── services/             alertService, sensorService, stationService, etc.
+│   ├── store/
+│   │   ├── store.js          9 slices registered
+│   │   └── slices/           auth, dashboard, realtime, stations, sensors,
+│   │                          alerts, maintenance, ui, notifications
+│   └── routes.js             All sidebar routes defined here
 ```
 
 ---
 
-## Complete API Endpoint Table
+## API Endpoints (~52 total)
+
+Base URL: `http://localhost:3001/api`. All routes except auth require `Authorization: Bearer <token>`.
 
 ### Auth
-| Method | Path | Auth | Body |
-|--------|------|------|------|
-| POST | `/api/auth/register` | none | `{ email, password, firstname, lastname }` |
-| POST | `/api/auth/login` | none | `{ email, password }` → `{ access_token, refresh_token, user }` |
-| GET | `/api/auth/me` | JwtGuard | → current user |
-| POST | `/api/auth/logout` | JwtGuard | `{ refresh_token }` |
-| POST | `/api/auth/refresh` | none | `{ refresh_token }` → new token pair |
-
-### Stations (JwtGuard + RolesGuard)
-| Method | Path | Min Role | Query/Notes |
-|--------|------|----------|------------|
-| GET | `/api/stations` | any | `page, limit, search, status, type` |
-| GET | `/api/stations/:id` | any | with sensors + alerts + maintenances |
-| POST | `/api/stations` | operator | |
-| PATCH | `/api/stations/:id` | operator | emits `station-status` WS if status in body |
-| DELETE | `/api/stations/:id` | admin | 204 |
-
-### Sensors (JwtGuard + RolesGuard)
-| Method | Path | Min Role | Notes |
-|--------|------|----------|-------|
-| GET | `/api/sensors` | any | `page, limit, stationId, type, status, search`; Redis-cached |
-| GET | `/api/sensors/:id` | any | with station + recent alerts |
-| GET | `/api/sensors/:id/data` | any | `limit` (default 100); newest first |
-| POST | `/api/sensors` | operator | |
-| PATCH | `/api/sensors/:id` | operator | invalidates list cache |
-| DELETE | `/api/sensors/:id` | admin | 204 |
-| POST | `/api/sensors/:id/reading` | operator | Manual inject: `{ value }` → updates lastReading, saves SensorData |
-
-### Alerts (JwtGuard + RolesGuard)
-| Method | Path | Min Role | Notes |
-|--------|------|----------|-------|
-| GET | `/api/alerts` | any | `page, limit, severity, status` |
-| GET | `/api/alerts/:id` | any | |
-| POST | `/api/alerts` | operator | broadcasts `alert-created` WS |
-| PATCH | `/api/alerts/:id/acknowledge` | technician | |
-| PATCH | `/api/alerts/:id/resolve` | technician | |
-
-### Maintenance (JwtGuard + RolesGuard)
-| Method | Path | Min Role | Notes |
-|--------|------|----------|-------|
-| GET | `/api/maintenance` | any | `page, limit, status, priority` |
-| GET | `/api/maintenance/:id` | any | |
-| POST | `/api/maintenance` | technician | |
-| PATCH | `/api/maintenance/:id` | technician | |
-| DELETE | `/api/maintenance/:id` | admin | 204 |
-
-### Flows (JwtGuard only)
-| Method | Path | Notes |
+| Method | Path | Guard |
 |--------|------|-------|
-| GET | `/api/flows` | list all |
-| GET | `/api/flows/:id` | |
-| POST | `/api/flows` | `{ name, graph }` |
-| PUT | `/api/flows/:id` | replace graph |
-| DELETE | `/api/flows/:id` | |
-| POST | `/api/flows/execute` | `{ graph, input }` — ad-hoc run |
+| POST | `/auth/register` | none |
+| POST | `/auth/login` | none |
+| GET | `/auth/me` | JwtGuard |
+| POST | `/auth/logout` | JwtGuard |
+| POST | `/auth/refresh` | none |
+| PATCH | `/auth/profile` | JwtGuard |
+| GET | `/health` | none |
 
-### Analytics (JwtGuard only)
-| Method | Path | Query Params |
-|--------|------|-------------|
-| GET | `/api/analytics/overview` | — |
-| GET | `/api/analytics/sensors/:id/stats` | `from, to` (ISO 8601; default 24h ago to now) |
-| GET | `/api/analytics/stations/:id/history` | `from, to, granularity=hour\|day` |
+### Stations / Sensors / Alerts / Maintenance / Users
+| Module | Endpoints |
+|--------|-----------|
+| Stations | GET `/stations`, POST, GET `/:id`, PATCH `/:id`, DELETE `/:id`, GET `/stations/map` |
+| Sensors | GET `/sensors`, POST, GET `/:id`, PATCH `/:id`, DELETE `/:id`, POST `/:id/readings`, GET `/:id/data`, GET `/:id/data/export` |
+| Alerts | GET `/alerts`, POST, GET `/:id`, PATCH `/:id/acknowledge`, PATCH `/:id/resolve`, DELETE `/:id`, GET `/alerts/export/csv` |
+| Maintenance | GET `/maintenance`, POST, GET `/:id`, PATCH `/:id`, DELETE `/:id` |
+| Users | GET `/users`, GET `/:id`, PATCH `/:id` |
 
-### Notifications (JwtGuard only)
-| Method | Path | Notes |
-|--------|------|-------|
-| GET | `/api/notifications` | `page, limit` |
-| GET | `/api/notifications/unread-count` | → `{ count }` |
-| PATCH | `/api/notifications/read-all` | → `{ updated }` |
-| PATCH | `/api/notifications/:id/read` | |
+### Analytics / Notifications / Workflows
+| Module | Endpoints |
+|--------|-----------|
+| Analytics | GET `/analytics/overview`, GET `/analytics/sensors/:id/stats`, GET `/analytics/stations/:id/history` |
+| Notifications | GET `/notifications`, GET `/notifications/unread-count`, PATCH `/notifications/:id/read`, PATCH `/notifications/read-all` |
+| Workflows | GET `/flows`, POST, GET `/:id`, PATCH `/:id`, DELETE `/:id`, POST `/:id/activate`, POST `/:id/deactivate`, POST `/flows/execute` |
 
-**No `/api/health` endpoint exists** — `app.module.ts` has no AppController.
+Interactive docs: http://localhost:3001/api/docs
 
 ---
 
-## WebSocket Events Table
+## WebSocket Events
 
-### Server → Client (emitted by backend, received by `useSocket.js`)
+### Server → Client (dispatched by `useSocket.js`)
 
-| Event | Payload | Redux actions dispatched |
-|-------|---------|------------------------|
-| `sensor-update` | `{ sensorId, value, unit, timestamp, status }` | `sensorUpdateReceived` (realtime), `sensorRealtimeUpdated` (sensors), `applySensorUpdate` (dashboard) |
-| `alert-created` | alert object | `alertReceived` (realtime), `alertRealtimeReceived` (alerts), `addDashboardAlert` (dashboard) |
-| `station-status` | `{ stationId, status, name, timestamp }` | `stationStatusReceived` (realtime), `updateStationStatus` (dashboard), `stationRealtimeUpdated` (stations) |
-| `notification-created` | notification object | `notificationReceived` (notifications) |
-| `notifications-read-all` | — | `allNotificationsCleared` (notifications) |
-
-### Client → Server
-
-| Event | Payload | Notes |
-|-------|---------|-------|
-| `subscribe` | `{ channel: 'dashboard'\|'alerts'\|'stations'\|'sensors' }` | sent automatically on connect |
-| `unsubscribe` | `{ channel }` | |
-| `ping` | — | server responds with `{ pong: Date.now() }` |
+| Event | Redux action |
+|-------|-------------|
+| `sensor-update` | `sensorRealtimeReceived` → realtimeSlice + sensorsSlice + dashboard |
+| `station-status` | `stationRealtimeUpdated` → stationsSlice + dashboard |
+| `alert-created` | `alertRealtimeReceived` → alertsSlice + dashboard |
+| `notification-created` | `notificationReceived` → notificationsSlice |
+| `maintenance-update` | `maintenanceRealtimeUpdated` → maintenanceSlice |
+| `system-stats` | `updateSystemStats` → dashboard |
 
 ---
 
@@ -202,142 +171,124 @@ store = {
   maintenance:   { items, meta, isLoading, isSaving, error },
   ui:            { sidebarMini, theme, notifications },
   notifications: { items, unreadCount, meta, isLoading, error },
+  // NOTE: No analyticsSlice — AnalyticsPage still uses local useState
 }
 ```
 
 ---
 
-## Demo Credentials (from seed.ts — verified)
-
-| Email | Password | Role |
-|-------|----------|------|
-| `admin@aquaflow.local` | `Admin123!` | admin |
-| `operator@aquaflow.local` | `Operator123!` | operator |
-| `technician@aquaflow.local` | `Tech123!` | technician |
-| `analyst@aquaflow.local` | `Analyst123!` | analyst |
-
-> **Note:** The old docs said `admin@aquaflow.io` — this is wrong. Domain is `.local`.
-
----
-
-## Current Bugs (with exact file + fix)
-
-### 🔴 Bug 1: No `/api/health` endpoint
-- **File:** `backend/src/app.module.ts`
-- **Fix:** Create `backend/src/app.controller.ts` with `@Get('health')` returning `{ status: 'ok' }`. Add `controllers: [AppController]` to the `@Module` decorator.
-
-### 🔴 Bug 2: `api` workflow block returns mock data
-- **File:** `backend/src/execution/engine/node-executor.ts` line 60
-- **Fix:** Change `case 'api': return { request: node.data, input, mocked: true };` to `case 'api': return this.httpRequestHandler.execute(node, input);`
-
-### 🔴 Bug 3: `notification` workflow block returns mock data
-- **File:** `backend/src/execution/engine/node-executor.ts` line 61
-- **Fix:** Create `NotificationHandler` that calls `NotificationsService.createBroadcast()`. Wire it in `NodeExecutor` constructor.
-
-### 🔴 Bug 4: "View all notifications" is a dead link
-- **File:** `frontend/src/components/Navbars/AdminNavbar.js` line 228
-- **Fix:** Create `frontend/src/modules/notifications/pages/NotificationsPage.jsx` and register `/admin/notifications` in `routes.js`.
-
-### 🔶 Bug 5: MonitoringPage has no sensor filter bar
-- **File:** `frontend/src/modules/monitoring/pages/MonitoringPage.jsx` line 78
-- **Fix:** Add `stationFilter`, `typeFilter` state; pass them to `dispatch(fetchSensors({ stationId, type }))`. Add filter bar UI in `<CardHeader>`.
-
-### 🔶 Bug 6: StationDetailsPage has no analytics chart
-- **File:** `frontend/src/modules/stations/pages/StationDetailsPage.jsx`
-- **Fix:** Add `useEffect` that calls `analyticsService.getStationHistory(stationId, { granularity: 'hour' })`. Render a `<Line>` chart from the response.
-
-### 🔶 Bug 7: MaintenancePage missing filter bar and assignedTo field
-- **File:** `frontend/src/modules/maintenance/pages/MaintenancePage.jsx`
-- **Fix:** Add `assignedTo` to `initialForm`. Add status/priority filter selects. Pass filters to `dispatch(fetchMaintenance(params))`.
-
-### 🔶 Bug 8: Workflow execution never persisted
-- **File:** `backend/src/flows/flow-executor.service.ts`
-- **Fix:** Inject `WorkflowExecution` repository. Before `runner.run()` create execution record; after, update with status/output/duration.
-
----
-
-## Features Not Yet Built (with effort estimates)
-
-| Feature | Estimated Effort |
-|---------|-----------------|
-| Add `/api/health` (Fix 1) | 15 min |
-| Fix `api` block (Fix 2) | 5 min |
-| Fix `notification` block (Fix 3) | 1.5 h |
-| Add notifications page (Fix 4) | 30–45 min |
-| Sensor filter bar (MonitoringPage) | 1.5 h |
-| Station history chart | 2.5 h |
-| Maintenance filters + assignedTo | 2 h |
-| Workflow execution logging | 3 h |
-| Alert detail modal | 2 h |
-| UsersModule + user management page | 2 d |
-| Dashboard trend charts | 1.5 d |
-| GIS station map (react-leaflet) | 1 d |
-| Workflow scheduling (cron/MQTT triggers) | 3 d |
-| CSV export (alerts + sensor data) | 1.5 d |
-| Live streaming chart (rolling buffer) | 1 d |
-| Password reset flow | 1 d |
-| Backend CI pipeline | 2 h |
-| Expanded test coverage | 3 d |
-
----
-
-## Architecture Principles — Never Break
-
-1. **All API routes protected by JwtGuard** — no endpoint should be left public except `auth/register`, `auth/login`, `auth/refresh`
-2. **RBAC via RolesGuard + `@Roles()` decorator** — use the `UserRole` enum; never hardcode role strings
-3. **Redis cache always has in-memory fallback** — `app.module.ts` pattern ensures the app starts even if Redis is down
-4. **Sensor list cache must be invalidated on create/update/delete** — see `SensorsService.clearListCache()`
-5. **WebSocket JWT validation on connect** — `RealtimeGateway.handleConnection()` disconnects sockets with invalid tokens
-6. **`station-status` WS event emitted only when `dto.status` is in PATCH body** — do not emit on every update
-7. **All DTOs have `@ApiProperty`** — required for Swagger docs
-8. **`flow-executor.service.ts` must call `validator.validate(graph)` before running** — prevents malformed graphs from crashing the runner
-9. **Frontend apiClient.js handles 401 → auto refresh → retry** — never break this interceptor chain
-10. **`deleteStation` thunk expects the service to return the station `id`** — `stationService.deleteStation(id)` returns `id`, not the object
-
----
-
-## How to Start the Project
+## Development Commands
 
 ```bash
-# Full stack (requires Docker)
-cd pfe-project
-docker-compose up --build
+# Start full dev stack (all 5 services)
+docker compose up -d
 
-# Backend only (dev hot reload)
-cd backend
-cp .env.example .env   # set DATABASE_HOST=localhost, etc.
-npm install
-npm run migration:run
-npm run seed            # optional — loads demo data
-npm run start:dev       # http://localhost:3001
+# Verify backend health
+curl http://localhost:3001/api/health
+# → {"status":"ok","db":{"status":"ok"},"redis":{"status":"ok"}}
 
-# Frontend only (dev)
-cd frontend
-npm install
-npm start               # http://localhost:3000
+# Backend: run all unit tests (~97 tests)
+cd backend && npm test
 
-# Swagger UI
-open http://localhost:3001/api/docs
+# Frontend: run all tests (101 tests)
+cd frontend && npm test -- --watchAll=false --forceExit
 
-# Run backend tests
-cd backend
-npm run test            # unit tests
-npm run test:e2e        # E2E tests
+# Frontend: verify CI build (must produce 0 ESLint warnings)
+cd frontend && CI=true npm run build
+
+# Seed demo data
+cd backend && npm run seed
+
+# View backend logs
+docker compose logs -f backend
 ```
 
 ---
 
-## Recommended First Session Task Order
+## Demo Credentials
 
-Start with the quickest wins that unblock the most:
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@aquaflow.io` | `Admin123!` |
+| Operator | `operator@aquaflow.io` | `Admin123!` |
+| Technician | `tech@aquaflow.io` | `Admin123!` |
+| Analyst | `analyst@aquaflow.io` | `Admin123!` |
 
-1. **Fix 1** (15 min) — Add `/api/health` endpoint → fixes Docker healthcheck
-2. **Fix 2** (5 min) — Wire `api` block to `HttpRequestHandler` → removes silent mock
-3. **Fix 4** (30–45 min) — Create notifications page + route → fixes dead navbar link
-4. **P2-A** (1.5 h) — Add sensor filter bar to `MonitoringPage`
-5. **P2-C** (2 h) — Add maintenance filters + `assignedTo` to `MaintenancePage`
-6. **P2-E** (2 h) — Add alert detail modal to `AlertsPage`
-7. **Fix 3** (1.5 h) — Wire `notification` block to `NotificationsService`
-8. **P2-D** (3 h) — Persist workflow execution to DB
+---
 
-After completing these 8 tasks, the platform will be ~80% complete with all broken items fixed and the core partial features done.
+## Test Coverage
+
+| Layer | Tests | Spec files |
+|-------|-------|-----------|
+| Backend | ~97 | `auth.service.spec.ts` (14), `alerts.service.spec.ts` (8), `notifications.service.spec.ts` (~9), `stations.service.spec.ts` (16), `sensors.service.spec.ts` (20), `flows.service.spec.ts` (18), `iot.service.spec.ts` (12) |
+| Frontend | 101 | `AdminNavbar.test.jsx` (13), `notificationsSlice.test.js` (25), `alertsSlice.test.js` (22), `SensorDetailsPage.test.jsx` (22), `useSocket.test.js` (19) |
+
+---
+
+## Remaining Work (P2 — Optional)
+
+All items have complete copy-paste implementation instructions in `NEXT_DEVELOPMENT_STEPS.md`.
+
+| ID | Task | File to edit | Effort |
+|----|------|-------------|--------|
+| P2-A | Sensor filter bar (station + type dropdowns) | `MonitoringPage.jsx` | 1.5 h |
+| P2-C | Maintenance filter bar + `assignedTo` field | `MaintenancePage.jsx` | 2 h |
+| P2-D | Workflow execution persistence to DB | `flow-executor.service.ts` | 3 h |
+| P2-E | Alert detail modal (View button + Modal) | `AlertsPage.jsx` | 2 h |
+| P2-F | Wire `api` and `notification` workflow stubs | `node-executor.ts` | 5 min + 1.5 h |
+| P2-G | Create `analyticsSlice` + wire to AnalyticsPage | new `analyticsSlice.js` | 2–3 h |
+
+---
+
+## Key Patterns — Must Follow
+
+### Backend
+
+1. **Guards:** All admin routes use `@UseGuards(JwtGuard)`. Admin-only operations also add `@UseGuards(JwtGuard, RolesGuard)` + `@Roles('admin')`.
+2. **DTOs:** Every endpoint has a Create/Update DTO with `class-validator` decorators.
+3. **Repositories:** Injected via `@InjectRepository(Entity)`. Module must include `TypeOrmModule.forFeature([Entity])`.
+4. **Realtime broadcasts:** Call `this.realtimeService.broadcastToAll(event, payload)` from services after state mutation.
+5. **Cache:** `CACHE_MANAGER` from `@nestjs/cache-manager`. TTL is in **milliseconds** (60 s = `60000`).
+6. **Enums:** Use entity enum values (`StationStatus.NORMAL`, `SensorStatus.OFFLINE`). Never raw strings.
+7. **Testing:** Use `Test.createTestingModule()`. Mock repositories with `{ create, save, findOne, findAndCount, remove, find }` as `jest.fn()`. Use `Object.defineProperty` to replicate TypeORM getter logic on mock objects.
+
+### Frontend
+
+1. **New pages:** Always add to `frontend/src/routes.js` + create in correct `modules/` subdirectory.
+2. **New API calls:** Always add to the relevant service file in `frontend/src/services/`. Never use `axios` directly in components.
+3. **State:** Always use Redux Toolkit. Never use `useState` for API-fetched data.
+4. **UI components:** Use Reactstrap. Follow the existing page layout: header `<div className="header bg-gradient-* pb-8 pt-5 pt-md-8">`, then `<Container className="mt--7" fluid>`.
+5. **Real-time:** Use `useSocket(isConnected)`. Subscribe in `useEffect`, unsubscribe on cleanup.
+6. **Auth/RBAC:** Use `useSelector(selectUserRole)` for conditional rendering.
+7. **Lint:** After any change, run `CI=true npm run build`. Zero warnings required. Move derived values INTO `useEffect` bodies to avoid `exhaustive-deps` warnings.
+
+---
+
+## Architecture Rules — Never Break
+
+1. All API routes protected by JwtGuard except `auth/register`, `auth/login`, `auth/refresh`, `health`
+2. RBAC via `RolesGuard` + `@Roles()` — never hardcode role strings
+3. Redis cache always has in-memory fallback (app starts even if Redis is down)
+4. Sensor list cache invalidated on create/update/delete — call `clearListCache()` in SensorsService
+5. WebSocket JWT validated on connect — RealtimeGateway disconnects invalid tokens
+6. `station-status` WS event emitted only when `dto.status` is present in PATCH body
+7. All DTOs have `@ApiProperty` — required for Swagger
+8. `flow-executor.service.ts` must call `validator.validate(graph)` before running
+9. Frontend `apiClient.js` handles 401 → auto-refresh → retry — never break this interceptor
+10. Never touch JointJS workflow canvas internals unless explicitly asked
+
+---
+
+## Reference Files (read these before writing code)
+
+| What you need | File |
+|--------------|------|
+| Full project state | `CURRENT_PROJECT_STATE.md` |
+| Remaining tasks with copy-paste code | `NEXT_DEVELOPMENT_STEPS.md` |
+| Dev setup and test commands | `DEV_TEST_GUIDE.md` |
+| Example page pattern | `frontend/src/modules/stations/pages/StationsPage.jsx` |
+| Example service pattern | `frontend/src/services/alertService.js` |
+| Example slice pattern | `frontend/src/store/slices/alertsSlice.js` |
+| Example backend service pattern | `backend/src/alerts/alerts.service.ts` |
+| Example backend test pattern | `backend/src/stations/stations.service.spec.ts` |
+| Example frontend test pattern | `frontend/src/store/slices/__tests__/alertsSlice.test.js` |

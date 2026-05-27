@@ -1,0 +1,145 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+# ── Job 1: Lint & TypeScript build check (no services needed — fast feedback) ─
+
+jobs:
+  lint-and-build:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: TypeScript compile check
+        run: npm run build
+
+# ── Job 2: Unit + E2E tests (requires PostgreSQL 15 + Redis 7 services) ───────
+
+  test:
+    name: Tests (unit + e2e)
+    runs-on: ubuntu-latest
+    needs: lint-and-build   # Only run if lint & build pass
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aquaflow_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    env:
+      NODE_ENV: test
+      PORT: 3001
+      # Database — points to the GitHub Actions service container above
+      DATABASE_HOST: localhost
+      DATABASE_PORT: '5432'
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: aquaflow_test
+      # Redis — points to the GitHub Actions service container above
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
+      # JWT — dummy secrets safe for CI only
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-characters-ok
+      JWT_REFRESH_SECRET: ci-test-refresh-secret-minimum-32-characters
+      # MQTT — no broker in CI; IotService handles connection failure gracefully
+      MQTT_BROKER_URL: mqtt://localhost:1883
+      # Email — disabled in CI (SMTP_HOST not set → NotificationsService no-ops)
+      FRONTEND_URL: http://localhost:3000
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # TypeORM synchronize=true in NODE_ENV≠production — tables created automatically
+      - name: Unit tests
+        run: >
+          npx jest --config jest.config.js
+          --testPathPattern="src/"
+          --forceExit
+          --passWithNoTests
+
+      - name: E2E tests
+        run: >
+          npx jest --config jest.config.js
+          --testPathPattern="test/"
+          --forceExit
+          --passWithNoTests
+
+      - name: Coverage report (unit)
+        run: >
+          npm run test:cov --
+          --testPathPattern="src/"
+          --forceExit
+          --passWithNoTests
+        continue-on-error: true   # Don't fail CI if coverage thresholds aren't met yet
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage/
+          retention-days: 14

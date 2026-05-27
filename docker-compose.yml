@@ -93,6 +93,12 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health 2>/dev/null | grep -q "\"status\":\"ok\"" || exit 1']
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
     networks:
       - aquaflow-network
     restart: unless-stopped
@@ -108,7 +114,8 @@ services:
     ports:
       - '3000:80'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - aquaflow-network
     restart: unless-stopped

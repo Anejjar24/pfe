@@ -1,0 +1,36 @@
+# ── Secrets & Environment Files ──────────────────────────────────────────────
+# Never commit real credentials — use .env.example as the template
+.env.prod
+.env.local
+.env.staging
+# Backend and frontend may each have their own .env — exclude all except examples
+backend/.env
+frontend/.env
+# Allow examples to be committed
+!**/.env.example
+!.env.example
+
+# ── Mosquitto Password File ───────────────────────────────────────────────────
+# Generated with mosquitto_passwd — contains hashed credentials
+mosquitto/config/passwd
+
+# ── Docker Build Artifacts ────────────────────────────────────────────────────
+backend/dist/
+frontend/build/
+
+# ── Node Modules ─────────────────────────────────────────────────────────────
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+mosquitto/log/
+
+# ── OS / Editor Files ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

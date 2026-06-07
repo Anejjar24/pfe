@@ -1,112 +1,174 @@
-# TASK 6 COMPLETION REPORT — P3-F: Real-time Live Streaming Chart
+# TASK 6 — triggerSettings Lost on Page Refresh
 
-**Date:** 2026-05-26  
-**Status:** ✅ COMPLETE
-
----
-
-## Summary
-
-`SensorDetailsPage` now shows a **Live Feed** card above the historical chart. It maintains a rolling 50-reading buffer, pre-seeded from fetched history and updated in real time via the existing WebSocket `sensor-update` events. The card shows a green "● Live" / grey "○ Disconnected" badge and the latest value.
+## Status: DONE
 
 ---
 
-## Files Changed
+## What Was Changed and Why
 
-### Modified Files
+`triggerSettings` (workflow name, trigger type, cron config, active flag) lived only in
+`BuilderPage`'s `useState` — not in localStorage.  A hard refresh reset it to defaults
+even when the graph draft was faithfully restored.
+
+The fix adds a **second localStorage slot** alongside the graph draft:
+
+| Slot | Key pattern | Contains |
+|------|-------------|----------|
+| Graph draft | `workflow-draft:{id}` | JointJS nodes + edges JSON |
+| Trigger settings | `workflow-trigger:{id}` | `{ name, triggerType, triggerConfig, isActive }` |
+
+Three persistence events write the trigger slot; one lazy `useState` initializer
+reads it back without any flash or extra `useEffect`.
+
+---
+
+## Files Modified
 
 | File | Change |
 |------|--------|
-| `frontend/src/modules/monitoring/pages/SensorDetailsPage.jsx` | Added `useSocket`, `useSelector`, live state + effects, `buildLiveChartData`, `liveChartOptions`, Live Feed card JSX |
-
-### No other files changed
-
-All WebSocket infrastructure (`useSocket`, `realtimeSlice`, `sensor-update` dispatch) was already in place and reused as-is.
+| `frontend/src/engine/autosaveManager.js` | Added `saveTriggerSettings`, `loadTriggerSettings`, `clearTriggerSettings` |
+| `frontend/src/pages/BuilderPage.jsx` | Lazy `useState` init + `saveTriggerSettings` calls in save / settings-save / load handlers; UUID migration on first backend save |
 
 ---
 
-## Architecture
+## Diff Summary
 
-### Data flow
-
+### `autosaveManager.js`
+```diff
++const TRIGGER_PREFIX = 'workflow-trigger:';
++const triggerKey = (id) => `${TRIGGER_PREFIX}${id}`;
++
++export function saveTriggerSettings(settings, id = 'new') {
++  try { localStorage.setItem(triggerKey(id), JSON.stringify(settings)); } catch {}
++}
++
++export function loadTriggerSettings(id = 'new') {
++  try {
++    const raw = localStorage.getItem(triggerKey(id));
++    if (raw) return JSON.parse(raw);
++  } catch { localStorage.removeItem(triggerKey(id)); }
++  return null;
++}
++
++export function clearTriggerSettings(id = 'new') {
++  localStorage.removeItem(triggerKey(id));
++}
 ```
-Backend MQTT message
-  → IoT service processes reading
-  → RealtimeService.broadcastToAll('sensor-update', { sensorId, value, timestamp, … })
-  → Socket.IO → frontend
-  → useSocket.on('sensor-update') → dispatch(sensorUpdateReceived(data))
-  → realtimeSlice.lastSensorUpdate = data
-  → SensorDetailsPage useEffect watches lastSensorUpdate
-  → filters sensorId === current page's sensorId
-  → setLiveReadings([newPoint, ...prev].slice(0, 50))
-  → React re-renders Live Feed chart
+
+### `BuilderPage.jsx` — imports
+```diff
+-import { clearWorkflowDraft, saveWorkflowDraft } from "engine/autosaveManager";
++import {
++  clearWorkflowDraft,
++  clearTriggerSettings,
++  loadTriggerSettings,
++  saveWorkflowDraft,
++  saveTriggerSettings,
++} from "engine/autosaveManager";
 ```
 
-### Buffer management
+### `BuilderPage.jsx` — triggerSettings initial state
+```diff
+-const [triggerSettings, setTriggerSettings] = useState({
+-  name: '',
+-  triggerType: 'manual',
+-  triggerConfig: {},
+-  isActive: false,
+-});
++// Lazy initializer: restore from localStorage on mount — no flash, no extra useEffect.
++const [triggerSettings, setTriggerSettings] = useState(() => {
++  return loadTriggerSettings('new') ?? {
++    name: '',
++    triggerType: 'manual',
++    triggerConfig: {},
++    isActive: false,
++  };
++});
+```
 
-| Detail | Value |
-|--------|-------|
-| Max buffer size | 50 readings |
-| Internal order | Newest-first (matches API response ordering) |
-| Chart order | Reversed before rendering (oldest-left → newest-right) |
-| Pre-seed | On page load: `readings.slice(0, 50)` from historical API fetch |
-| Reset | Whenever `readings` changes (limit selector change triggers a refetch) |
+### `BuilderPage.jsx` — handleSave
+```diff
+   saveWorkflowDraft(workflow, editor.workflowId);
++  saveTriggerSettings(triggerSettings, editor.workflowId);
+   try {
+     const result = await saveWorkflow(workflow, triggerSettings);
+     if (editor.workflowId === 'new' && result?.id) {
+       clearWorkflowDraft('new');
++      clearTriggerSettings('new');
++      saveTriggerSettings(triggerSettings, result.id);
+       editor.setWorkflowId(result.id);
+     }
+```
+
+### `BuilderPage.jsx` — handleLoadWorkflow
+```diff
++  const localSettings = wf.id ? loadTriggerSettings(wf.id) : null;
++  const restoredSettings = localSettings ?? {
+     name: wf.name || '',
+     triggerType: wf.triggerType || 'manual',
+     triggerConfig: wf.triggerConfig || {},
+     isActive: wf.isActive || false,
++  };
+-  setTriggerSettings({ name: wf.name || '', ... });
++  setTriggerSettings(restoredSettings);
++  if (wf.id) saveTriggerSettings(restoredSettings, wf.id);
+```
+
+### `BuilderPage.jsx` — handleSettingsSave
+```diff
+   setTriggerSettings(settings);
++  saveTriggerSettings(settings, editor.workflowId);
+   const workflow = editor.refreshWorkflow();
+```
 
 ---
 
-## Live Feed Card — Feature Details
+## How to Verify
 
-### Header
-- **Title**: "Live Feed" + connection badge
-- **Badge**: `● Live` (green) when socket is connected, `○ Disconnected` (grey) when not
-- **Current value**: Latest reading (`liveReadings[0].value`) shown in green in top-right corner
-- **Subtitle**: "Rolling buffer — last N readings"
+### Refresh test (unsaved / 'new' workflow)
+1. Open `/admin/builder` with no loaded workflow
+2. Click **Settings** → set Name = `"My Test Flow"`, Trigger = `scheduled`, Cron = `*/5 * * * *`, toggle **Active** ON → Save
+3. Observe the toolbar badge shows `⏱ */5 * * * *` + green **Active** badge
+4. **Hard-refresh the page** (Ctrl+Shift+R)
+5. Expected: the toolbar badge immediately shows `⏱ */5 * * * *` + **Active** — no flash, restored synchronously by the lazy `useState` initializer
 
-### Chart
-- Green line (`#2dce89`), semi-transparent fill
-- Height: 220 px (compact, above the full historical chart)
-- X-axis: `HH:MM:SS` timestamp labels, max 8 ticks
-- Y-axis: auto-scaled to current buffer range
-- `animation.duration: 250` — smooth but not sluggish
-- No legend (sensor name is in the card title row)
-- Empty state: "Waiting for live sensor data…" or "Not connected — live updates paused."
+### Refresh test (saved workflow)
+1. Click **Save** (backend running) — workflow is saved and gets a real UUID
+2. Click **Settings** → change Name to `"Renamed Flow"` → Save
+3. **Hard-refresh**
+4. Expected: toolbar shows the updated name in the Settings modal (`initial` prop); badge label still reflects the trigger type
 
-### Historical chart (unchanged)
-- Remains below the live card with its own 380 px height
-- Min/max threshold lines, legend, Export CSV button — all untouched
+### Load from picker test
+1. Open the Workflow Picker, select a workflow that has a cron trigger configured on the backend
+2. Observe the toolbar badge updates immediately
+3. Open Settings modal — fields reflect the loaded workflow's values
+4. Change the cron expression locally but do **not** click the toolbar Save
+5. **Refresh** — the locally-edited cron expression is restored (preferred over the backend value), because it was saved to `workflow-trigger:{id}` when the Settings modal was submitted
+
+### localStorage inspection
+Open DevTools → Application → Local Storage → `http://localhost:3000`:
+- `workflow-trigger:new` — present while working on an unsaved draft
+- `workflow-trigger:{uuid}` — present after first backend save; `workflow-trigger:new` is deleted
 
 ---
 
-## Verification Steps
+## Expected Results
 
-1. **Navigate** to `/#/admin/monitoring` → click any sensor
-2. **Live Feed card** appears above "Historical Readings"
-3. Green "● Live" badge = socket connected
-4. Chart pre-populated with latest 50 historical readings
-5. **Trigger a new reading** (any of):
-   - MQTT message to `sensors/<sensorId>/data`
-   - Inject via `POST /api/sensors/:id/reading` in the Builder or Swagger UI
-6. Chart scrolls right — new point appears on the right, oldest drops off the left
-7. "Current value" in the card header updates immediately
-8. Disconnect network → badge turns grey "○ Disconnected" → no new points until reconnect
-9. Reconnect → badge returns to green, buffer continues from where it left off
+| Scenario | Before | After |
+|----------|--------|-------|
+| Refresh while on unsaved ('new') draft | Name, trigger type, cron, active all reset | All restored synchronously on mount |
+| Save for first time (new → UUID) | Settings stay in 'new' slot forever | 'new' slot cleared; copied to `{uuid}` slot |
+| Load from picker | Settings from DB record | Prefers any locally-saved edits, falls back to DB |
+| Settings modal change | Persisted only on backend save | Persisted to localStorage immediately |
 
-### Quick reading injection test
-```bash
-TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@aquaflow.io","password":"Admin123!"}' \
-  | jq -r '.access_token')
+---
 
-SENSOR_ID=<your-sensor-uuid>
+## Side Effects / Follow-up Notes
 
-# Inject 5 readings one second apart — watch the live chart update
-for i in 1 2 3 4 5; do
-  VALUE=$(echo "scale=2; $RANDOM / 100" | bc)
-  curl -s -X POST "http://localhost:3001/api/sensors/$SENSOR_ID/reading" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"value\": $VALUE}" | jq '.value'
-  sleep 1
-done
-```
+- **No backend changes** — the fix is entirely client-side; the DB schema and API are untouched.
+- **`clearWorkflowDraft` unchanged** — graph and trigger settings are stored under separate
+  keys intentionally; clearing one does not affect the other.
+- **`LEGACY_TYPE_MAP` pattern** — similar single-source-of-truth discipline: if the
+  `triggerSettings` shape changes in future, only `loadTriggerSettings` needs a migration shim.
+- TASK 7 will standardise the `node.data` / `node.properties` field name mismatch in the
+  serialiser/deserialiser.

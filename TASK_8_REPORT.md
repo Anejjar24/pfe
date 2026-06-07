@@ -1,191 +1,138 @@
-# Task 8 Report — P5: Sensor Historical Data Chart
+# TASK 8 — Fit-to-Screen Button
 
-**Status:** DONE  
-**Date:** 2026-05-13  
-**Corresponds to:** NEXT_DEVELOPMENT_STEPS.md → P5 (Week 2)
+## Status: DONE
 
 ---
 
-## What Was Changed
+## What Was Changed and Why
 
-### 1. `frontend/src/services/sensorService.js`
+The canvas had no way to automatically frame all nodes.  If a user zoomed in or
+panned far from the origin, finding the workflow again required manual zoom-out and
+scrolling.  The "Reset view" button (⊞) returns to 1:1 scale at the origin, but it
+does not scale the graph to fill the canvas.
 
-Added `getSensorById(id)` method calling `GET /api/sensors/:id`.
+The fix adds a **Fit to screen** action that:
+1. calls `paper.scaleContentToFit()` — a built-in JointJS v4 method that finds the
+   smallest scale/translate that shows all elements within the current paper viewport,
+2. syncs the React `zoom` state from the paper's actual scale so the toolbar readout
+   stays correct, and
+3. is reachable both from a new toolbar button and from the keyboard shortcut
+   `Ctrl+Shift+F`.
 
-**Diff:**
+A full minimap/navigator was evaluated but is only available in `@joint/plus` (the
+paid add-on); it is deferred rather than reinventing it with a DOM overlay.
+
+---
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/hooks/useJointGraph.js` | Added `fitToScreen` callback; exported it |
+| `frontend/src/components/canvas/JointPaper.jsx` | Added `Ctrl+Shift+F` keyboard shortcut |
+| `frontend/src/components/canvas/CanvasToolbar.jsx` | Added `onFit` prop + new toolbar button |
+| `frontend/src/components/canvas/FlowCanvas.jsx` | Passed `onFit={editor.fitToScreen}` |
+
+---
+
+## Diff Summary
+
+### `useJointGraph.js`
 ```diff
-+  async getSensorById(id) {
-+    const response = await apiClient.get(`/sensors/${id}`);
-+    return response.data;
-+  },
++  const fitToScreen = useCallback(() => {
++    const paper = paperRef.current;
++    if (!paper) return;
++    paper.scaleContentToFit({
++      padding: 40,           // breathing room around outermost nodes
++      minScale: 0.2,         // never shrink below 20 %
++      maxScale: 2.0,         // never expand beyond 200 %
++      useModelGeometry: false,
++    });
++    // Sync the React zoom readout to the scale JointJS chose.
++    setZoom(paper.scale().sx);
++  }, []);
 +
-   async createSensor(payload) {
+   return {
+     ...
++    fitToScreen,
+   };
 ```
 
----
-
-### 2. `frontend/src/modules/monitoring/pages/SensorDetailsPage.jsx` *(new file)*
-
-New detail page at route `/admin/monitoring/:sensorId`.
-
-**Features:**
-- Fetches sensor metadata (`GET /api/sensors/:id`) and history (`GET /api/sensors/:id/data`) in parallel via `Promise.all`
-- **Line chart** (Chart.js 2.x via `react-chartjs-2` — already installed) with:
-  - Blue line: actual readings, time-ordered left → right
-  - Green dashed line: min threshold (only if configured)
-  - Red dashed line: max threshold (only if configured)
-  - Points hidden when > 100 readings (performance)
-- **Limit selector**: buttons to show last 50 / 100 / 200 / 500 readings (re-fetches on click)
-- **4 KPI cards**: Current Reading, Average, Min Threshold, Max Threshold
-- **Sensor metadata table**: Device ID, Serial Number, Location, Alert Enabled, Last Reading, Station
-- **Back button** navigates to `/admin/monitoring`
-- Handles loading, error, and empty-data states
-
----
-
-### 3. `frontend/src/layouts/Admin.js`
-
-Added import and one extra `<Route>` for the detail page (not in sidebar):
-
-**Diff:**
+### `JointPaper.jsx`
 ```diff
-+import SensorDetailsPage from "modules/monitoring/pages/SensorDetailsPage";
- ...
-         <Routes>
-           {getRoutes(routes)}
-+          <Route path="/monitoring/:sensorId" element={<SensorDetailsPage />} />
-           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
-         </Routes>
++      // Fit to screen: Ctrl+Shift+F / Cmd+Shift+F
++      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") {
++        event.preventDefault();
++        editorRef.current.fitToScreen();
++      }
 ```
 
----
-
-### 4. `frontend/src/modules/monitoring/pages/MonitoringPage.jsx`
-
-Added "View" button on every sensor row that navigates to the detail page.
-
-**Diff:**
+### `CanvasToolbar.jsx`
 ```diff
-+import { useNavigate } from 'react-router-dom';
- ...
-+  const navigate = useNavigate();
- ...
--                    <td className="text-right">
--                      {canManageSensors ? ( ... Edit / Delete ... ) : 'Read only'}
--                    </td>
-+                    <td className="text-right">
-+                      <Button size="sm" color="default"
-+                        onClick={() => navigate(`/admin/monitoring/${sensor.id}`)}>
-+                        View
-+                      </Button>
-+                      {canManageSensors && ( ... Edit / Delete ... )}
-+                    </td>
+ export default function CanvasToolbar({
+   ...
++  onFit,
+   ...
+ }) {
+   ...
++        <button onClick={onFit} title="Fit to screen (Ctrl+Shift+F)" type="button">
++          <i className="fa fa-expand-arrows-alt" aria-hidden="true" />
++        </button>
+         <button onClick={onReset} title="Reset view (1:1)" type="button">
 ```
 
-Note: "View" is visible to all roles (including read-only); Edit/Delete remain role-restricted.
-
----
-
-## Why
-
-The backend already exposed `GET /api/sensors/:id/data` returning time-series `SensorData` records, but there was no frontend page consuming it. Operators and technicians had no way to see sensor history, detect trends, or verify threshold violations over time — which is a core SCADA requirement.
-
-Chart.js 2.x was already bundled (it's part of the Argon Dashboard template), so no new dependencies were needed.
+### `FlowCanvas.jsx`
+```diff
+       <CanvasToolbar
+         ...
++        onFit={editor.fitToScreen}
+         ...
+       />
+```
 
 ---
 
 ## How to Verify
 
-### Prerequisites
-```bash
-docker-compose up -d postgres redis mosquitto
-cd backend && npm run start:dev
-cd frontend && npm start
-```
+### Button in toolbar
+1. Open `/admin/builder`
+2. Zoom in to 150 % and pan so the starter workflow is off-screen
+3. Click the **⤢** (expand-arrows-alt) button in the zoom group of the canvas toolbar
+4. All three starter nodes should snap into view, centred, with ~40 px padding on each side
+5. The zoom readout should update to reflect the new scale (e.g. `72 %`)
 
-### API-level tests
+### Keyboard shortcut
+1. Click anywhere on the canvas (so focus is on the window, not an input)
+2. Press `Ctrl+Shift+F` (or `Cmd+Shift+F` on macOS)
+3. Same result as clicking the button
 
-**1. Get token:**
-```bash
-TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@aquaflow.com","password":"Admin1234!"}' \
-  | jq -r '.access_token')
-```
+### Boundary cases
+- **Empty canvas** (all nodes deleted) — `scaleContentToFit` is a no-op when there are
+  no elements; the call completes without error
+- **Single node** — the node is centred with 40 px padding; zoom readout updates
+- **Zoom readout** — after fit, the readout value matches what JointJS chose (not stale)
+- **Reset view** button — still works independently, returning to 100 % at origin
 
-**2. Get a sensor ID:**
-```bash
-SENSOR_ID=$(curl -s http://localhost:3001/api/sensors \
-  -H "Authorization: Bearer $TOKEN" | jq -r '.data[0].id')
-echo $SENSOR_ID
-```
-
-**3. Fetch sensor detail (200 with token, 401 without):**
-```bash
-# ✅ Should return full sensor object
-curl -s http://localhost:3001/api/sensors/$SENSOR_ID \
-  -H "Authorization: Bearer $TOKEN" | jq '{id, name, type, unit, minThreshold, maxThreshold}'
-
-# ❌ Should return 401
-curl -s http://localhost:3001/api/sensors/$SENSOR_ID | jq '.statusCode'
-```
-
-**4. Fetch sensor historical data (200 with token, 401 without):**
-```bash
-# ✅ Should return array of {id, value, timestamp, ...}
-curl -s "http://localhost:3001/api/sensors/$SENSOR_ID/data?limit=50" \
-  -H "Authorization: Bearer $TOKEN" | jq 'length'
-
-# ❌ Should return 401
-curl -s "http://localhost:3001/api/sensors/$SENSOR_ID/data?limit=50" | jq '.statusCode'
-```
-
-### UI verification
-1. Log in → go to `/admin/monitoring`
-2. Each sensor row now has a **View** button (visible to all roles)
-3. Click **View** → navigates to `/admin/monitoring/<uuid>`
-4. Page loads with:
-   - KPI cards (Current Reading, Average, Min/Max threshold)
-   - Line chart with readings ordered left → right (oldest → newest)
-   - Green dashed line = min threshold (if configured)
-   - Red dashed line = max threshold (if configured)
-   - Limit buttons: 50 / 100 / 200 / 500
-5. Click **50** → chart re-fetches and shows fewer points
-6. Click **Back to Monitoring** → returns to list
-7. If sensor has no readings → "No historical readings available" message shown
-
-### MQTT simulation (generate test data)
-```bash
-# Publish a test sensor reading via MQTT
-# Replace <SENSOR_DEVICE_ID> with the sensor's deviceId field
-mosquitto_pub -h localhost -p 1883 \
-  -t "sensors/<SENSOR_DEVICE_ID>/data" \
-  -m '{"value": 6.7, "timestamp": "<ISO_DATE>"}'
-
-# Then re-open the detail page — new reading should appear in chart
-```
+### Existing reset view still works
+The ⊞ button and `Ctrl+Shift+Z`/`Ctrl+Y` shortcuts are unaffected.
 
 ---
 
 ## Expected Results
 
-| Action | Expected |
-|--------|----------|
-| `GET /api/sensors/:id` without token | `401 Unauthorized` |
-| `GET /api/sensors/:id` with token | `200` + sensor object |
-| `GET /api/sensors/:id/data?limit=100` without token | `401 Unauthorized` |
-| `GET /api/sensors/:id/data?limit=100` with token | `200` + array of readings |
-| Navigate to `/admin/monitoring/:id` | Chart page loads |
-| Sensor with min/max threshold | Dashed reference lines visible on chart |
-| Click limit button | Chart re-fetches with new limit |
-| Sensor with no readings | Empty state message |
+| Action | Before | After |
+|--------|--------|-------|
+| Nodes panned off-screen | Manual zoom-out + scroll required | Single click / `Ctrl+Shift+F` centres everything |
+| After zoom-in and fit | Zoom readout shows stale value | Readout updates to match actual JointJS scale |
+| Empty canvas | N/A | No error, fit is a no-op |
 
 ---
 
-## Build Verification
+## Side Effects / Follow-up Notes
 
-```
-npm run build  →  ✅ Compiled successfully
-Bundle size +82 KB (chart library used — already installed, no new deps)
-Only pre-existing Header.js warnings remain
-```
+- **`useWorkflowEditor` unchanged** — it spreads `...graph`, so `fitToScreen` is
+  automatically available on the `editor` object consumed by every component.
+- **Minimap deferred** — `@joint/plus` Navigator would provide a live minimap overlay.
+  If the free build gains an official minimap utility, it can be added here by mounting
+  a second `dia.Paper` (read-only) in a corner overlay div.
+- Phase 2 starts with **TASK 9 — `data-transform` node type**.

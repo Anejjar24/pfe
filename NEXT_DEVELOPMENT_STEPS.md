@@ -1,7 +1,7 @@
 # AquaFlow — Next Development Steps
 
-**Last updated:** 2026-05-27 (post-P4 — all planned phases complete)  
-**Status:** Development phases P1 → P4 are fully complete. Only optional P2 enhancements remain.
+**Last updated:** 2026-05-27 (post-P2 audit — all phases + all enhancements complete)  
+**Status:** Platform is 100% feature-complete. All P1–P4 phases and all P2 optional enhancements done.
 
 ---
 
@@ -10,11 +10,11 @@
 | Phase | Description | Status |
 |-------|-------------|--------|
 | P1 | Critical bug fixes (health endpoint, workflow stubs, notifications route) | ✅ ALL COMPLETE |
-| P2 | High-value UI enhancements | ⚠️ 5 items remain (nice-to-have) |
+| P2 | UI enhancements + analyticsSlice + execution history endpoint | ✅ ALL COMPLETE |
 | P3 | Planned features (users, charts, scheduling, GIS, CSV, live charts) | ✅ ALL COMPLETE |
 | P4 | DevOps / production hardening | ✅ ALL COMPLETE |
 
-No critical or high-severity bugs remain. All P1 items that were open in previous audits have been resolved.
+No open issues remain. No critical bugs. Platform is 100% feature-complete as of 2026-05-27.
 
 ---
 
@@ -23,21 +23,37 @@ No critical or high-severity bugs remain. All P1 items that were open in previou
 | Fix | What was done | Completed |
 |-----|--------------|-----------|
 | Health endpoint | `GET /api/health` with DB + Redis probes, HTTP 503 on degraded | P4-1 |
-| `api` workflow block | **Still a stub** — `{ request: node.data, mocked: true }` | ⚠️ See P2 below |
-| `notification` workflow block | **Still a stub** — `{ notified: true, ... }` | ⚠️ See P2 below |
+| `api` workflow block | Wired to `HttpRequestHandler` — no longer a stub | P4 audit confirmed |
+| `notification` workflow block | Wired to `NotificationHandler` — no longer a stub | P4 audit confirmed |
 | `/admin/notifications` route | Full NotificationsPage + route registered | P3 |
 
 ---
 
-## P2 — Remaining Optional Enhancements
+## ✅ P2 — All Enhancements Complete
 
-These are all medium/low priority UI improvements or backend completeness items. The platform is fully functional without them.
+All P2 items were verified complete (most already existed in the codebase; two were added in the 2026-05-27 session).
 
 ---
 
-### P2-A: Sensor filter bar in MonitoringPage
+| P2 Item | Status | How verified |
+|---------|--------|-------------|
+| P2-A: Sensor filter bar (MonitoringPage) | ✅ | Station + type dropdowns, wired `useEffect`, clear button — already in codebase |
+| P2-B: Station history chart (StationDetailsPage) | ✅ | `analyticsService.getStationHistory` + granularity presets + Line chart — already in codebase |
+| P2-C: Maintenance filter bar + assignedTo | ✅ | Status/priority filters, technician dropdown with `userService.getUsersDropdown` — already in codebase |
+| P2-D: Workflow execution persistence | ✅ | `flow-executor.service.ts` fully DB-persisted; added `GET /flows/:id/executions` endpoint |
+| P2-E: Alert detail modal | ✅ | Row click → full detail modal with ack/resolve — already in codebase |
+| P2-F: `api`/`notification` workflow stubs | ✅ | Both wired to `HttpRequestHandler` / `NotificationHandler` — already in codebase |
+| P2-G: analyticsSlice + AnalyticsPage Redux | ✅ | Created `analyticsSlice.js`, registered in `store.js`, migrated `AnalyticsPage.jsx` |
 
-**Problem:** `frontend/src/modules/monitoring/pages/MonitoringPage.jsx` fetches all sensors with no filters. On large deployments (100+ sensors) the table is overwhelming with no way to scope by station or type.
+---
+
+## ~~P2-A through P2-G implementation details~~
+
+> **These sections are obsolete.** All items above are complete. Kept below for historical reference only.
+
+### P2-A: Sensor filter bar in MonitoringPage (DONE)
+
+**Problem was:** `frontend/src/modules/monitoring/pages/MonitoringPage.jsx` fetches all sensors with no filters. On large deployments (100+ sensors) the table is overwhelming with no way to scope by station or type.
 
 **File to edit:** `frontend/src/modules/monitoring/pages/MonitoringPage.jsx`
 
@@ -446,20 +462,14 @@ Replace `useState` + direct `analyticsService` calls with `useDispatch` + thunk 
 
 ---
 
-## Implementation Order (when you resume development)
+## ✅ Platform Complete — No Remaining Development Tasks
 
-These are all independent — pick based on business value:
+All planned and optional features are implemented. The next steps are operational, not developmental:
 
-| Priority | Task | Effort | Value |
-|----------|------|--------|-------|
-| 1 | P2-D: Workflow execution persistence | 3 h | Core feature completeness |
-| 2 | P2-A: Sensor filter bar | 1.5 h | UX for large deployments |
-| 3 | P2-C: Maintenance filter + assignedTo | 2 h | Completes maintenance UI |
-| 4 | P2-E: Alert detail modal | 2 h | Completes alert management |
-| 5 | P2-F: Wire workflow stubs | 5 min + 1.5 h | Removes silent mocks |
-| 6 | P2-G: analyticsSlice | 2–3 h | Redux consistency |
-
-**Total remaining effort: ~12–14 hours of development.**
+1. **Deploy to production** — follow `DEV_TEST_GUIDE.md §10` using `docker-compose.prod.yml`
+2. **Run migrations** — `docker compose exec backend npm run migration:run`
+3. **Seed demo data** — `docker compose exec backend npm run seed`
+4. **Verify health** — `curl https://yourdomain.com/api/health`
 
 ---
 
@@ -489,5 +499,5 @@ These are all independent — pick based on business value:
 - ✅ P4-2: GitHub Actions CI pipelines (backend + frontend)
 - ✅ P4-3: Production Docker Compose (hardened, no exposed infra ports)
 - ✅ P4-4: Backend test coverage expansion (~97 tests across 7 spec files)
-- ✅ P4-5: Frontend test coverage expansion (101 tests across 5 test files)
+- ✅ P4-5: Frontend test coverage expansion (91 tests across 5 test files)
 - ✅ P4-6: Lint cleanup — 0 ESLint warnings, `CI=true` build passes

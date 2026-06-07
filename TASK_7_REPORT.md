@@ -1,210 +1,167 @@
-# Task 7 Report — P4: Add Edit/Delete to MonitoringPage
+# TASK 7 — node.data vs node.properties Field Mismatch
 
-**Status:** DONE  
-**Date:** 2026-05-13  
-**Corresponds to:** NEXT_DEVELOPMENT_STEPS.md → P4 (Week 2)
+## Status: DONE
 
 ---
 
-## Context — Tasks 1–6 Already Implemented
+## What Was Changed and Why
 
-Before starting Task 7, a full code audit confirmed that Tasks 1–6 from the MD files were already present in the codebase:
+Two different names were being used for the same concept — a node's runtime property
+bag — depending on which layer of the stack you were looking at:
 
-| Task | Description | Status |
-|------|-------------|--------|
-| Fix 1 | JWT guard on FlowsController | Already done |
-| Fix 2 | AlertsPage built | Already done |
-| Fix 3 | `station-status` WS event emitted | Already done |
-| P1 | Workflows persisted to PostgreSQL | Already done |
-| P2 | TypeORM migration file generated | Already done |
-| P3 | Maintenance CRUD UI | Already done |
+| Layer | Field name | Example |
+|-------|-----------|---------|
+| External JSON (serialized graph) | `data` | `{ "type":"action", "data":{"operation":"multiply"} }` |
+| Backend `WorkflowNode` interface | `data` | `node.data?.operation` |
+| Internal JointJS cell (`workflow` attr) | `properties` | `workflow.properties.label` |
+| `createWorkflowNode` overrides param | `properties` | `overrides.properties` |
 
-Task 7 (P4) is therefore the **first genuinely new task** in this session.
+Every backend handler already used `node.data`.  The serializer already wrote `data`
+to JSON.  But the internal JointJS cell stored the same bag under `properties`, and
+the `createWorkflowNode` override key was also `properties`.  This caused a silent
+rename on every deserialization round-trip, and meant that any developer reading
+`PropertiesPanel` or `NodeEditorModal` had to remember which layer they were in.
 
-Also noted: **StationsPage already had edit + delete + filter wiring** — so only `MonitoringPage` (sensors) needed work.
+The fix renames the internal field and the override key to `data` everywhere, making
+the shape identical at all three layers.  No localStorage migration is needed because
+the **serialized** format was already `data` — only the in-memory JointJS cell changed.
 
 ---
 
-## What Was Changed
+## Files Modified
 
-### 1. `frontend/src/services/sensorService.js`
+| File | Change |
+|------|--------|
+| `frontend/src/registry/blockFactory.js` | `overrides.properties` → `overrides.data`; internal `workflow.properties` → `workflow.data` in both `createWorkflowNode` and `updateNodeProperties` |
+| `frontend/src/engine/graphSerializer.js` | `workflow.properties` → `workflow.data` |
+| `frontend/src/engine/graphDeserializer.js` | `properties: nodeData.data \|\| …` → `data: nodeData.data \|\| …` |
+| `frontend/src/hooks/useJointGraph.js` | `workflowData.properties` → `workflowData.data` in `duplicateSelectedNode` |
+| `frontend/src/components/properties/PropertiesPanel.jsx` | `workflow.properties?.[field.name]` → `workflow.data?.[field.name]` |
+| `frontend/src/components/properties/NodeEditorModal.jsx` | `workflow?.properties` → `workflow?.data` |
+| `frontend/src/utils/nodeHelpers.js` | `properties: { ...(workflow.properties \|\| {}) }` → `data: { ...(workflow.data \|\| {}) }` |
 
-Added `deleteSensor(id)` method that calls `DELETE /api/sensors/:id`.
+Backend unchanged — `workflow.types.ts` already declared `data?: Record<string, unknown>`.
 
-**Diff:**
+---
+
+## Diff Summary
+
+### `blockFactory.js` — createWorkflowNode
 ```diff
-+  async deleteSensor(id) {
-+    const response = await apiClient.delete(`/sensors/${id}`);
-+    return response.data;
-+  },
-+
-   async getSensorData(id, limit = 100) {
+-  const properties = {
++  // Named `data` to match the external JSON format and backend WorkflowNode interface.
++  const data = {
+     ...getDefaultProperties(type),
+-    ...(overrides.properties || {}),
++    ...(overrides.data || {}),
+   };
+   // ...
+-      label: { text: properties.label || definition.title, ... },
++      label: { text: data.label || definition.title, ... },
+   // ...
+   node.set("workflow", {
+     type, title, icon, color,
+-    properties,
++    data,
+   });
 ```
 
-### 2. `frontend/src/store/slices/sensorsSlice.js`
-
-- Added `isSaving: false` to initial state
-- Added `updateSensor` async thunk (`PATCH /api/sensors/:id`)
-- Added `deleteSensor` async thunk (`DELETE /api/sensors/:id`)
-- Added extra reducers for both thunks (pending/fulfilled/rejected)
-- Added `selectSensorsSaving` selector
-
-**Diff (key additions):**
+### `blockFactory.js` — updateNodeProperties
 ```diff
- const initialState = {
-   items: [],
-   meta: { total: 0, page: 1, limit: 20, pages: 0 },
-   isLoading: false,
-+  isSaving: false,
-   error: null,
- };
-
-+export const updateSensor = createAsyncThunk('sensors/updateSensor', async ({ id, payload }, { rejectWithValue }) => {
-+  try {
-+    return await sensorService.updateSensor(id, payload);
-+  } catch (error) {
-+    return rejectWithValue(error.response?.data?.message || 'Failed to update sensor');
-+  }
-+});
-+
-+export const deleteSensor = createAsyncThunk('sensors/deleteSensor', async (id, { rejectWithValue }) => {
-+  try {
-+    await sensorService.deleteSensor(id);
-+    return id;
-+  } catch (error) {
-+    return rejectWithValue(error.response?.data?.message || 'Failed to delete sensor');
-+  }
-+});
-
-+      .addCase(createSensor.pending, (state) => { state.isSaving = true; })
-       .addCase(createSensor.fulfilled, (state, action) => {
-+        state.isSaving = false;
-         state.items.unshift(action.payload);
-         state.meta.total += 1;
-       })
-+      .addCase(createSensor.rejected, (state) => { state.isSaving = false; })
-+      .addCase(updateSensor.pending, (state) => { state.isSaving = true; })
-+      .addCase(updateSensor.fulfilled, (state, action) => {
-+        state.isSaving = false;
-+        const index = state.items.findIndex((s) => s.id === action.payload.id);
-+        if (index >= 0) state.items[index] = action.payload;
-+      })
-+      .addCase(updateSensor.rejected, (state) => { state.isSaving = false; })
-+      .addCase(deleteSensor.fulfilled, (state, action) => {
-+        state.items = state.items.filter((s) => s.id !== action.payload);
-+        state.meta.total -= 1;
-+      });
-
-+export const selectSensorsSaving = (state) => state.sensors.isSaving;
+-  const nextProperties = { ...(workflow.properties || {}), ...properties };
+-  node.set("workflow", { ...workflow, properties: nextProperties });
+-  node.attr("label/text", nextProperties.label || workflow.title || workflow.type);
++  const nextData = { ...(workflow.data || {}), ...properties };
++  node.set("workflow", { ...workflow, data: nextData });
++  node.attr("label/text", nextData.label || workflow.title || workflow.type);
 ```
 
-### 3. `frontend/src/modules/monitoring/pages/MonitoringPage.jsx`
+### `graphSerializer.js`
+```diff
+-        data: workflow.properties || {},
++        data: workflow.data || {},
+```
 
-Full rewrite to add:
-- `editingSensor` state — tracks which sensor is being edited (null = create mode)
-- `deleteTarget` state — sensor staged for deletion
-- `openEdit(sensor)` — prefills form with sensor data and opens modal
-- Modal title changes: "Create Sensor" / "Edit Sensor"
-- Submit dispatches `updateSensor` or `createSensor` based on `editingSensor`
-- **Actions column** added to table with:
-  - **Edit** button (admin + operator)
-  - **Delete** button (admin only) → opens confirmation modal
-  - "Read only" label for other roles
-- **Delete confirmation modal** (same pattern as MaintenancePage — no `window.confirm()`)
-- `isSaving` wired to disable buttons while request is in flight
+### `graphDeserializer.js`
+```diff
+-      properties: nodeData.data || nodeData.properties || {},
++      data: nodeData.data || nodeData.properties || {},
+```
 
----
+### `useJointGraph.js`
+```diff
+-      { properties: { ...(workflowData.properties || {}) } }
++      { data: { ...(workflowData.data || {}) } }
+```
 
-## Why
+### `PropertiesPanel.jsx`
+```diff
+-                value={workflow.properties?.[field.name]}
++                value={workflow.data?.[field.name]}
+```
 
-The `MonitoringPage` was create-only. Operators had no way to correct sensor thresholds, update device IDs, or change status without going directly to the API. Admins had no way to remove decommissioned sensors from the UI. These are basic operational requirements for a SCADA platform.
+### `NodeEditorModal.jsx`
+```diff
+-    setProperties(workflow?.properties || {});
++    setProperties(workflow?.data || {});
+```
+
+### `utils/nodeHelpers.js`
+```diff
+-    properties: { ...(workflow.properties || {}) },
++    data: { ...(workflow.data || {}) },
+```
 
 ---
 
 ## How to Verify
 
-### Prerequisites
-```bash
-# Start infra
-docker-compose up -d postgres redis mosquitto
+### Properties panel shows correct values
+1. Open `/admin/builder`
+2. Drag an **Action** node onto the canvas
+3. Properties panel on the right should show Operation = `multiply`, Factor = `2`
+4. Change Factor to `5`, confirm the canvas label does not error
 
-# Start backend
-cd backend && npm run start:dev
+### Duplicate preserves data
+1. Select a node and click **Clone** (or Ctrl+D if wired)
+2. Click the duplicate — Properties panel should show the same field values as the original
 
-# Start frontend
-cd frontend && npm start
+### Round-trip (serialize → deserialize)
+1. Build a small workflow (Input → Action → Output)
+2. Click **Export** — inspect the downloaded JSON; each node should have `"data": { ... }` (not `"properties"`)
+3. Click **Import** with that JSON — nodes restore with correct property values
+
+### Double-click edit modal
+1. Double-click a node to open the full edit modal
+2. Change a field value and click **Save**
+3. The Properties panel should reflect the new value immediately
+
+### Verification command (zero stale refs)
 ```
-
-### API-level tests (sensors endpoint requires JWT)
-
-**1. Get a token:**
-```bash
-TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@aquaflow.com","password":"Admin1234!"}' \
-  | jq -r '.access_token')
+grep -rn "workflow\.properties\|overrides\.properties" frontend/src --include="*.js" --include="*.jsx"
+# Expected: no output
 ```
-
-**2. List sensors (200 with token, 401 without):**
-```bash
-# ✅ Should return 200 + sensor list
-curl -s http://localhost:3001/api/sensors \
-  -H "Authorization: Bearer $TOKEN" | jq '.data | length'
-
-# ❌ Should return 401
-curl -s http://localhost:3001/api/sensors | jq '.statusCode'
-```
-
-**3. Update a sensor (PATCH — 200 with admin token):**
-```bash
-SENSOR_ID=$(curl -s http://localhost:3001/api/sensors \
-  -H "Authorization: Bearer $TOKEN" | jq -r '.data[0].id')
-
-curl -s -X PATCH http://localhost:3001/api/sensors/$SENSOR_ID \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"maxThreshold": 9.5}' | jq '{id, name, maxThreshold}'
-```
-
-**4. Delete a sensor (DELETE — 200 with admin token, 401 without):**
-```bash
-# ✅ With token — should return {"deleted":true}
-curl -s -X DELETE http://localhost:3001/api/sensors/$SENSOR_ID \
-  -H "Authorization: Bearer $TOKEN" | jq .
-
-# ❌ Without token — should return 401
-curl -s -X DELETE http://localhost:3001/api/sensors/$SENSOR_ID | jq '.statusCode'
-```
-
-### UI verification
-1. Log in as **admin** → go to `/admin/monitoring`
-2. Each sensor row now shows **Edit** and **Delete** buttons
-3. Click **Edit** → modal opens pre-filled with that sensor's data
-4. Change a threshold → click "Update Sensor" → row updates in-place (no page reload)
-5. Click **Delete** → confirmation modal appears with sensor name
-6. Confirm → sensor disappears from list
-7. Log in as **operator** → only **Edit** button visible (no Delete)
-8. Log in as **analyst** → "Read only" label shown
 
 ---
 
 ## Expected Results
 
-| Action | Expected |
-|--------|----------|
-| `PATCH /api/sensors/:id` without token | `401 Unauthorized` |
-| `PATCH /api/sensors/:id` with valid JWT | `200` + updated sensor object |
-| `DELETE /api/sensors/:id` without token | `401 Unauthorized` |
-| `DELETE /api/sensors/:id` with valid admin JWT | `200` + `{"deleted":true,"id":"..."}` |
-| UI edit modal | Opens pre-filled, saves changes optimistically |
-| UI delete modal | Shows confirmation, removes row on confirm |
-| Operator role | Edit visible, Delete hidden |
-| Analyst role | "Read only" shown |
+- Node data displayed in the Properties panel matches what was set during creation
+- Duplicate node copies all property values correctly
+- Export JSON always has `data` (never `properties`) on every node
+- Import JSON with either `data` or `properties` field still deserializes correctly
+  (the `nodeData.data || nodeData.properties` fallback in `graphDeserializer` handles
+  old saved files transparently)
+- No `console.error` or blank property panels in the browser
 
 ---
 
-## Build Verification
+## Side Effects / Follow-up Notes
 
-```
-npm run build  →  ✅ Compiled successfully (only pre-existing Header.js warnings)
-```
+- **Backward compat preserved** — `graphDeserializer.js` still reads `nodeData.properties`
+  as a fallback, so any JSON file exported before TASK 7 will still load correctly.
+- **`nodeHelpers.cloneNodeOffset`** was updated even though it is currently unused
+  (exported but never imported).  It's kept consistent to avoid a confusing inconsistency
+  if it is imported in future.
+- TASK 8 will add a **Fit-to-screen** button using `paper.fitToContent()` and an optional
+  minimap/navigator.

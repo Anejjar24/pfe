@@ -1,154 +1,171 @@
-# TASK 5 COMPLETION REPORT — P3-E: CSV Export for Alerts and Sensor Data
+# TASK 5 — Duplicate "api" / "http-request" Block
 
-**Date:** 2026-05-26  
-**Status:** ✅ COMPLETE
-
----
-
-## Summary
-
-Two new CSV export endpoints added to the backend (alerts and sensor data). Two "Export CSV" buttons added to the frontend — one in the Alerts page toolbar, one in the Sensor Details chart header.
+## Status: DONE
 
 ---
 
-## Backend Changes
+## What Was Changed and Why
 
-### Modified Files
+Two block types did identical things:
+
+| Type | Category | Properties |
+|------|----------|------------|
+| `api` | Integrations | label, method (3 opts), url |
+| `http-request` | Integration | label, method (5 opts), url, headers, body |
+
+`http-request` is strictly richer (two output ports: response + error; headers/body
+fields; all 5 HTTP methods).  Having both in the sidebar confused operators.
+
+The fix is a **three-layer strategy**:
+
+1. **Remove from sidebar** — delete the `api` entry from `blocks.js`. Users can no
+   longer drag new `api` nodes onto the canvas.
+2. **Lazy migration on load** — `graphDeserializer.js` now maps `type:"api"` →
+   `type:"http-request"` via `LEGACY_TYPE_MAP` before constructing the JointJS
+   element.  The first time a user opens an old workflow and saves it, all `api`
+   nodes become `http-request` nodes permanently.
+3. **Backend backward compat** — `'api'` remains in `validTypes` and the
+   `case 'api':` executor branch remains, so workflows already saved in the
+   PostgreSQL DB continue to validate and execute without any DB migration script.
+
+---
+
+## Files Modified
 
 | File | Change |
 |------|--------|
-| `backend/src/alerts/alerts.service.ts` | Added `exportCsv(params)` method — applies same filters as `findAll`, fetches up to 10 000 rows, builds CSV string |
-| `backend/src/alerts/alerts.controller.ts` | Added `GET /alerts/export` endpoint with `@Header` decorators for Content-Type/Disposition |
-| `backend/src/sensors/sensors.service.ts` | Added `exportDataCsv(sensorId, limit, from?, to?)` method — validates sensor, fetches up to 5 000 SensorData rows, includes unit from parent sensor |
-| `backend/src/sensors/sensors.controller.ts` | Added `GET /sensors/:id/data/export` endpoint (declared before `:id/data` to avoid routing ambiguity) |
-
-### New API Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/api/alerts/export` | JWT | Download alerts CSV |
-| `GET` | `/api/sensors/:id/data/export` | JWT | Download sensor readings CSV |
-
-### Query Parameters
-
-**`GET /alerts/export`**
-| Param | Type | Description |
-|-------|------|-------------|
-| `status` | string | Filter by alert status |
-| `severity` | string | Filter by severity |
-| `type` | string | Filter by alert type |
-| `stationId` | UUID | Filter by station |
-| `sensorId` | UUID | Filter by sensor |
-| `from` | ISO date | Lower bound for `createdAt` |
-| `to` | ISO date | Upper bound for `createdAt` |
-
-**`GET /sensors/:id/data/export`**
-| Param | Type | Description |
-|-------|------|-------------|
-| `limit` | number | Max rows (default 5000) |
-| `from` | ISO date | Lower bound for `timestamp` |
-| `to` | ISO date | Upper bound for `timestamp` |
-
-### CSV Formats
-
-**Alerts CSV** (`alerts.csv`):
-```
-id,type,severity,status,message,station,sensor,createdAt,acknowledgedAt,resolvedAt,sourceSystem
-```
-- String fields (message, station name, sensor name, sourceSystem) are quoted and double-quotes are escaped
-- Timestamps are ISO 8601
-
-**Sensor Data CSV** (`sensor-data.csv`):
-```
-id,timestamp,value,unit,source,accuracy
-```
-- `unit` is repeated from the parent Sensor row (convenient for data processing)
+| `frontend/src/data/blocks.js` | Removed the 13-line `api` block object |
+| `frontend/src/engine/graphDeserializer.js` | Added `LEGACY_TYPE_MAP` + `resolveNodeType()` shim; applied before `createWorkflowNode()` |
+| `backend/src/execution/engine/node-executor.ts` | Added explanatory comment above `case 'api':` (no functional change) |
+| `backend/src/flows/flow-validator.service.ts` | Moved `'api'` to its own line with an explanatory comment (no functional change) |
 
 ---
 
-## Frontend Changes
+## Diff Summary
 
-### Modified Files
-
-| File | Change |
-|------|--------|
-| `frontend/src/services/alertService.js` | Added `exportCsv(params)` — calls `/alerts/export` with `responseType: 'blob'` |
-| `frontend/src/services/sensorService.js` | Added `exportSensorDataCsv(id, params)` — calls `/sensors/:id/data/export` with `responseType: 'blob'` |
-| `frontend/src/modules/alerts/pages/AlertsPage.jsx` | Imported `alertService`; added `isExporting` state + `handleExport` handler + "Export CSV" button in CardHeader |
-| `frontend/src/modules/monitoring/pages/SensorDetailsPage.jsx` | Added `isExporting` state + `handleExport` handler + "Export CSV" button in chart CardHeader (disabled when no readings) |
-
-### Download Pattern (both pages)
-```javascript
-const blob = await service.exportCsv(params);           // responseType: 'blob'
-const url  = window.URL.createObjectURL(blob);
-const a    = document.createElement('a');
-a.href     = url;
-a.download = 'filename.csv';
-document.body.appendChild(a);
-a.click();
-document.body.removeChild(a);
-window.URL.revokeObjectURL(url);
+### `blocks.js`
+```diff
+-  {
+-    type: "api",
+-    title: "API",
+-    icon: "fa-cloud-arrow-up",
+-    category: "Integrations",
+-    description: "Describes an external API call.",
+-    color: "#dc2626",
+-    inputs: [{ id: "in", label: "Request" }],
+-    outputs: [{ id: "out", label: "Response" }],
+-    properties: [
+-      { name: "label", ..., defaultValue: "API Request" },
+-      { name: "method", ..., options: ["GET","POST","PUT","PATCH","DELETE"] },
+-      { name: "url", ..., defaultValue: "https://api.example.com" },
+-    ],
+-  },
 ```
-No external download library needed — works in all modern browsers.
+
+### `graphDeserializer.js`
+```diff
++const LEGACY_TYPE_MAP = {
++  api: 'http-request',   // consolidated in TASK 5
++};
++
++function resolveNodeType(type) {
++  return LEGACY_TYPE_MAP[type] ?? type;
++}
++
+ workflow.nodes.forEach((nodeData) => {
++  const type = resolveNodeType(nodeData.type);   // ← migrate before create
+-  const node = createWorkflowNode(nodeData.type, ...);
++  const node = createWorkflowNode(type, ...);
+```
+
+### `node-executor.ts`
+```diff
++  // 'api' is a legacy alias for 'http-request' — kept so that workflows
++  // saved in the DB before TASK 5 can still be executed without a migration.
+   case 'api': return this.httpRequestHandler.execute(node, input);
+```
+
+### `flow-validator.service.ts`
+```diff
+-  'input', 'output', 'action', 'decision', 'delay', 'api', 'notification',
++  'input', 'output', 'action', 'decision', 'delay', 'notification',
++  // 'api' is a legacy alias — retained so DB workflows remain valid.
++  'api',
+```
 
 ---
 
-## No New Dependencies
+## How to Verify
 
-Neither backend nor frontend requires new packages for this task.
+### Browser — Sidebar check
+1. Open `/admin/builder`
+2. Expand the block sidebar — confirm **no "API" block** appears under any category
+3. Confirm **"HTTP Request"** block appears under **Integration**
 
----
-
-## Verification Steps
-
-### 1. Start backend
-```bash
-cd backend && npm start
+### Migration — Load an old workflow with `api` nodes
+1. Import this JSON file via the **Import** (⬆) button:
+```json
+{
+  "name": "legacy-api-test",
+  "nodes": [
+    {"id":"n1","type":"input","position":{"x":80,"y":120},"data":{"label":"In","value":"1"}},
+    {"id":"n2","type":"api","position":{"x":320,"y":120},"data":{"label":"Old API","method":"GET","url":"https://httpbin.org/get"}},
+    {"id":"n3","type":"output","position":{"x":580,"y":120},"data":{"label":"Out","format":"json"}}
+  ],
+  "edges":[
+    {"id":"e1","source":"n1","sourcePort":"out","target":"n2","targetPort":"in"},
+    {"id":"e2","source":"n2","sourcePort":"out","target":"n3","targetPort":"in"}
+  ]
+}
 ```
+2. The middle node should render as **"HTTP Request"** (teal/orange border, HTTP Request icon)
+3. Click the node — the Properties panel should show HTTP Request fields (method, url, headers, body)
+4. Click **Save** — the graph is persisted with `type:"http-request"` nodes only
 
-### 2. Test alerts export (curl)
+### Backend — Old api nodes still executable
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@aquaflow.io","password":"Admin123!"}' \
-  | jq -r '.access_token')
+  -d '{"email":"admin@aquaflow.local","password":"Admin123!"}' | jq -r '.accessToken')
 
-# All alerts
-curl -s "http://localhost:3001/api/alerts/export" \
+curl -s -X POST http://localhost:3001/api/flows/execute \
+  -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -o alerts.csv
-head -3 alerts.csv
-# → id,type,severity,status,message,...
-
-# Filtered by severity
-curl -s "http://localhost:3001/api/alerts/export?severity=critical" \
-  -H "Authorization: Bearer $TOKEN" \
-  -o critical-alerts.csv
+  -d '{
+    "graph": {
+      "nodes": [
+        {"id":"n1","type":"input","data":{"value":"test"}},
+        {"id":"n2","type":"api","data":{"method":"GET","url":"https://httpbin.org/get"}},
+        {"id":"n3","type":"output","data":{"format":"json"}}
+      ],
+      "edges": [
+        {"id":"e1","source":"n1","target":"n2"},
+        {"id":"e2","source":"n2","target":"n3"}
+      ]
+    },
+    "input": {}
+  }' | jq '.status'
 ```
+Expected: `"success"` (the `api` node still executes via `httpRequestHandler`)
 
-### 3. Test sensor data export (curl)
-```bash
-# Get a sensor ID first
-SENSOR_ID=$(curl -s "http://localhost:3001/api/sensors" \
-  -H "Authorization: Bearer $TOKEN" | jq -r '.data[0].id')
+---
 
-curl -s "http://localhost:3001/api/sensors/$SENSOR_ID/data/export?limit=100" \
-  -H "Authorization: Bearer $TOKEN" \
-  -o sensor-data.csv
-head -3 sensor-data.csv
-# → id,timestamp,value,unit,source,accuracy
-```
+## Expected Results
 
-### 4. Frontend — Alerts page
-1. Navigate to `/#/admin/alerts`
-2. "Export CSV" button appears in the top-right toolbar
-3. Apply a severity or status filter → click "Export CSV"
-4. Browser downloads `alerts.csv` containing only the filtered rows
-5. Button shows "Exporting…" while in flight, re-enables on completion
+- **Sidebar**: Only `http-request` ("HTTP Request") block visible. No "API" block.
+- **Old JSONs loaded via Import**: `api` nodes silently become `http-request` nodes — correct icon, correct properties panel, correct execution.
+- **Old DB workflows executed via curl**: Return `"success"` — backward compat preserved.
+- **New workflows**: Can only contain `http-request` nodes (api is no longer drag-droppable).
 
-### 5. Frontend — Sensor Details page
-1. Navigate to any sensor detail page (`/#/admin/monitoring` → click a sensor)
-2. "Export CSV" button appears in the "Historical Readings" card header (right side, after the 50/100/200/500 selector)
-3. Button is disabled when no readings are loaded
-4. Click → browser downloads `sensor-<uuid>-data.csv`
-5. CSV contains the same number of rows as the currently selected limit (50/100/200/500)
+---
+
+## Side Effects / Follow-up Notes
+
+- **No DB migration script needed.** The lazy-migration approach means the DB is
+  cleaned up organically: every time a user opens an old workflow and saves it,
+  the JSONB `graph` column is rewritten with `http-request` nodes.
+- **`LEGACY_TYPE_MAP` is the single place** to record future renames. Any developer
+  adding a new rename just adds one line to that map.
+- TASK 9 will add the `data-transform` block. When adding it, remember to also add
+  it to `validTypes` in `flow-validator.service.ts` and to the `WorkflowNodeType`
+  union in `workflow.types.ts`.

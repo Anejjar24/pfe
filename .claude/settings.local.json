@@ -6,7 +6,11 @@
       "Bash(ls \"C:\\\\Users\\\\DELL\\\\Downloads\\\\pfe-project\\\\\"*.md 2>/dev/null || dir /b \"C:\\\\Users\\\\DELL\\\\Downloads\\\\pfe-project\\\\*.md\")",
       "Bash(npx jest *)",
       "Bash(npx react-scripts *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(npm test *)",
+      "Bash(cat \"/mnt/c/Users/DELL/AppData/Local/Temp/claude/C--Users-DELL-Downloads-pfe-project/c58f5d23-8ebd-4a00-bee0-78272f4aef6d/tasks/balbaowkv.output\" 2>/dev/null || echo \"file not found yet\")",
+      "Bash(npm install *)"
     ]
   }
 }

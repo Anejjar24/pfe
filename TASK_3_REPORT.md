@@ -1,202 +1,155 @@
-# TASK 3 COMPLETION REPORT — P3-C: Workflow Scheduling & MQTT-Triggered Execution
+# TASK 3 — No Undo/Redo
 
-**Date:** 2026-05-25  
-**Status:** ✅ COMPLETE
-
----
-
-## Summary
-
-Workflows can now run automatically via two trigger modes:
-1. **Scheduled** — cron expression, evaluated by NestJS's `ScheduleModule`
-2. **Sensor Threshold** — fires when an MQTT sensor reading crosses a configured threshold
-
-A "Settings" button in the Automation Builder opens a modal where users configure the trigger without touching the JointJS canvas.
+## Status: DONE
 
 ---
 
-## ⚠️ Action Required Before Running
+## What Was Changed and Why
 
-```bash
-cd backend
-npm install
-```
-
-The `@nestjs/schedule` package was added to `package.json` but not yet installed. Run `npm install` once before starting the backend.
+The builder had no history mechanism — every accidental deletion or mis-move was
+permanent.  JointJS ships `dia.CommandManager` which automatically intercepts
+every graph mutation (add, remove, move, property change) and maintains an
+undo/redo stack.  This task wires that built-in capability to toolbar buttons
+and keyboard shortcuts without changing any existing graph logic.
 
 ---
 
-## Backend Changes
-
-### New File
-
-| File | Description |
-|------|-------------|
-| `backend/src/flows/workflow-scheduler.service.ts` | Loads scheduled workflows on startup, registers cron jobs via `SchedulerRegistry`, registers MQTT threshold handler |
-
-### Modified Files
+## Files Modified
 
 | File | Change |
 |------|--------|
-| `backend/package.json` | Added `"@nestjs/schedule": "^4.1.0"` |
-| `backend/src/app.module.ts` | Added `ScheduleModule.forRoot()` import |
-| `backend/src/flows/dto/create-flow.dto.ts` | Added `triggerType?`, `triggerConfig?`, `isActive?` fields |
-| `backend/src/flows/flows.service.ts` | `create()` + `update()` now persist trigger fields; added `activate(id)` and `deactivate(id)` |
-| `backend/src/flows/flows.controller.ts` | Added `PATCH /flows/:id/activate` and `PATCH /flows/:id/deactivate`; injected `WorkflowSchedulerService` |
-| `backend/src/flows/flows.module.ts` | Added `WorkflowSchedulerService` to providers; exports `FlowExecutorService` and `FlowsService` |
-| `backend/src/iot/mqtt/mqtt.client.ts` | Added `registerHandler()` method + external handler dispatch in `handleMessage()` |
+| `frontend/src/hooks/useJointGraph.js` | Added `commandManagerRef`, `canUndo/canRedo` state, `undo()`/`redo()` callbacks; `initialize` creates `dia.CommandManager`; `importWorkflow` resets history |
+| `frontend/src/components/canvas/JointPaper.jsx` | Added `Ctrl+Z` (undo) and `Ctrl+Y` / `Ctrl+Shift+Z` (redo) keyboard shortcuts |
+| `frontend/src/components/canvas/CanvasToolbar.jsx` | Added `canUndo`, `canRedo`, `onUndo`, `onRedo` props; added new History toolbar group with Undo (↩) and Redo (↪) buttons |
+| `frontend/src/components/canvas/FlowCanvas.jsx` | Removed `deserializeGraph` import; startup now calls `editor.importWorkflow()` instead — which resets the history baseline; threaded `canUndo/canRedo/onUndo/onRedo` props to `CanvasToolbar` |
 
-### New API Endpoints
+---
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `PATCH` | `/flows/:id/activate` | JWT | Set `isActive = true`; reloads cron job if scheduled |
-| `PATCH` | `/flows/:id/deactivate` | JWT | Set `isActive = false`; removes cron job |
+## Diff Summary
 
-### Trigger Config Shapes
+### `useJointGraph.js`
+```diff
++  const commandManagerRef = useRef(null);
++  const [canUndo, setCanUndo] = useState(false);
++  const [canRedo, setCanRedo] = useState(false);
 
-**Scheduled:**
-```json
-{
-  "triggerType": "scheduled",
-  "triggerConfig": { "cron": "0 */6 * * *" },
-  "isActive": true
-}
+   // inside initialize():
++  const cmdManager = new dia.CommandManager({ graph });
++  commandManagerRef.current = cmdManager;
+   graph.on("add remove ...", () => {
+-    refreshWorkflow();
++    refreshWorkflow();
++    setCanUndo(cmdManager.hasUndo());
++    setCanRedo(cmdManager.hasRedo());
+   });
+   // cleanup:
++  commandManagerRef.current = null;
+
+   // importWorkflow:
++  if (commandManagerRef.current) {
++    try { commandManagerRef.current.reset(); } catch {}
++    setCanUndo(false); setCanRedo(false);
++  }
+
++  const undo = useCallback(() => {
++    const cm = commandManagerRef.current;
++    if (!cm?.hasUndo()) return;
++    cm.undo();
++    setCanUndo(cm.hasUndo()); setCanRedo(cm.hasRedo());
++    refreshWorkflow();
++  }, [refreshWorkflow]);
++
++  const redo = useCallback(() => { /* mirror of undo */ }, [refreshWorkflow]);
+
+-  return { ..., zoom, ... }
++  return { ..., canUndo, canRedo, undo, redo, zoom, ... }
 ```
 
-**Sensor Threshold:**
-```json
-{
-  "triggerType": "sensor_threshold",
-  "triggerConfig": {
-    "sensorId": "<uuid>",
-    "condition": "above",
-    "threshold": 7.5
-  },
-  "isActive": true
-}
+### `JointPaper.jsx`
+```diff
++  // Undo: Ctrl+Z / Cmd+Z
++  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'z') {
++    event.preventDefault(); editorRef.current.undo();
++  }
++  // Redo: Ctrl+Y or Ctrl+Shift+Z
++  if (((ctrl && key==='y') || (ctrl && shift && key==='z'))) {
++    event.preventDefault(); editorRef.current.redo();
++  }
+```
+
+### `CanvasToolbar.jsx`
+```diff
++  canRedo, canUndo, onRedo, onUndo,    // new props
+   ...
++  <div className="toolbar-group">
++    <button disabled={!canUndo} onClick={onUndo} title="Undo (Ctrl+Z)">↩</button>
++    <button disabled={!canRedo} onClick={onRedo} title="Redo (Ctrl+Y)">↪</button>
++  </div>
+```
+
+### `FlowCanvas.jsx`
+```diff
+-import { deserializeGraph } from "engine/graphDeserializer";
+   ...
+-  deserializeGraph(currentEditor.graphRef.current, draft || starterWorkflow);
+-  currentEditor.refreshWorkflow();
++  currentEditor.importWorkflow(draft || starterWorkflow);
+   ...
++  canUndo={editor.canUndo}  canRedo={editor.canRedo}
++  onUndo={editor.undo}      onRedo={editor.redo}
 ```
 
 ---
 
-## Frontend Changes
+## How to Verify
 
-### New File
+### Prerequisites
+```bash
+docker-compose up --build
+# or: cd frontend && npm start
+```
 
-| File | Description |
-|------|-------------|
-| `frontend/src/components/workflow/WorkflowSettingsModal.jsx` | Trigger config modal: name, trigger type, cron presets/custom, sensor selector, condition, threshold, active toggle |
+### Browser steps
 
-### Modified Files
+1. Open `/admin/builder`
+2. **Verify baseline**: Undo (↩) and Redo (↪) buttons should be greyed/disabled
+3. Drag an **Action** block onto the canvas
+   - Undo button should become enabled
+4. Click **Undo** (or `Ctrl+Z`) — the Action block disappears
+   - Redo button becomes enabled; Undo is disabled again
+5. Click **Redo** (or `Ctrl+Y`) — the Action block reappears
+6. Move a node to a new position → `Ctrl+Z` → node snaps back to old position
+7. Delete a node → `Ctrl+Z` → node reappears
+8. Load a saved workflow via the 📂 picker → verify Undo/Redo are both greyed
+   (history cleared at load boundary)
 
-| File | Change |
-|------|--------|
-| `frontend/src/services/workflowApi.js` | `saveWorkflow(workflow, trigger)` now sends trigger settings; added `loadWorkflow(id)`, `loadWorkflows()`, `activateWorkflow(id)`, `deactivateWorkflow(id)` |
-| `frontend/src/pages/BuilderPage.jsx` | Added `triggerSettings` state; Settings button + badge toolbar; opens `WorkflowSettingsModal`; trigger config saved to backend on modal save |
-
-### WorkflowSettingsModal Features
-
-| Feature | Detail |
-|---------|--------|
-| Workflow Name | Optional rename field |
-| Trigger type selector | Manual / Scheduled / Sensor Threshold |
-| Cron presets | Every minute, 5/15/30 min, hourly, 6h, daily — plus "Custom…" freetext |
-| Sensor dropdown | Populated from `GET /sensors?limit=200`; shows name, type, station |
-| Condition | Above / Below / Any (threshold field disabled when "Any") |
-| Active toggle | Checkbox; triggers fire only when `isActive = true` |
-| Toolbar badge | Shows current trigger mode + active status next to Settings button |
+### Keyboard shortcut matrix
+| Action | Shortcut |
+|--------|----------|
+| Undo | `Ctrl+Z` / `Cmd+Z` |
+| Redo | `Ctrl+Y` / `Cmd+Y` |
+| Redo (alt) | `Ctrl+Shift+Z` / `Cmd+Shift+Z` |
 
 ---
 
-## Architecture Notes
+## Expected Results
 
-### Scheduled Workflows
-- `WorkflowSchedulerService.onModuleInit()` loads all `isActive=true, triggerType='scheduled'` workflows at startup and calls `SchedulerRegistry.addCronJob()`
-- Each job is named `wf:<workflowId>` so it can be updated on `activate`/`deactivate`
-- `reloadWorkflow(id)` is called by the controller after any activate/deactivate PATCH — it removes the old cron job and re-registers if the workflow is still active + scheduled
-- Invalid cron strings are caught and logged, not thrown — the service remains healthy
-
-### MQTT Sensor Threshold
-- `MqttClient.registerHandler()` stores handlers in a private array; `handleMessage()` forwards every message to all registered handlers after processing IoT service logic
-- `WorkflowSchedulerService` registers one handler on `onModuleInit` — no polling, no circular dependencies
-- Handler parses `sensors/:sensorId/data` topics, queries `sensor_threshold` workflows, checks condition, and fires executor asynchronously (errors are caught and logged)
-- DB query on every MQTT message is acceptable at typical IoT rates (1 reading/s); can be cached in a future optimization
-
-### No Circular Dependencies
-- `FlowsModule` already imports `IotModule` which exports `MqttClient`
-- `WorkflowSchedulerService` lives in `FlowsModule` and injects `MqttClient` from `IotModule` — one-directional dependency
+- Undo / Redo toolbar buttons appear between Import and Zoom controls
+- Buttons are disabled (greyed) when nothing to undo/redo; enabled otherwise
+- All graph mutations are reversible: add node, delete node, move node, change connection
+- Keyboard shortcuts work globally on the canvas (not when focus is inside an input/textarea)
+- Loading a workflow resets history — undo cannot cross a load boundary
 
 ---
 
-## Verification Steps
+## Side Effects / Follow-up Notes
 
-### 1. Run `npm install` in backend
-
-```bash
-cd backend && npm install
-```
-
-### 2. Scheduled workflow (manual test)
-
-```bash
-TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@aquaflow.io","password":"Admin123!"}' \
-  | jq -r '.access_token')
-
-# Create a minimal workflow
-WF_ID=$(curl -s -X POST http://localhost:3000/flows \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Test Scheduler",
-    "graph": { "id": "test-sched-01", "cells": [] },
-    "triggerType": "scheduled",
-    "triggerConfig": { "cron": "* * * * *" },
-    "isActive": false
-  }' | jq -r '.id')
-echo "Created workflow: $WF_ID"
-
-# Activate it — backend should log a cron registration within 60 s
-curl -s -X PATCH "http://localhost:3000/flows/$WF_ID/activate" \
-  -H "Authorization: Bearer $TOKEN" | jq '.isActive'
-# → true
-
-# Verify backend logs: "Registered cron "* * * * *" for workflow "Test Scheduler""
-# After 60 s: "Running scheduled workflow: "Test Scheduler""
-```
-
-### 3. Sensor threshold workflow (MQTT test)
-
-```bash
-# Create a sensor_threshold workflow
-WF_ID2=$(curl -s -X POST http://localhost:3000/flows \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Pressure Guard",
-    "graph": { "id": "test-threshold-01", "cells": [] },
-    "triggerType": "sensor_threshold",
-    "triggerConfig": { "sensorId": "<real-sensor-uuid>", "condition": "above", "threshold": 7.0 },
-    "isActive": true
-  }' | jq -r '.id')
-
-# Publish a test MQTT message above threshold
-mosquitto_pub -h localhost -p 1883 \
-  -t "sensors/<real-sensor-uuid>/data" \
-  -m '{"value": 8.5}'
-# Backend logs: "MQTT trigger: workflow "Pressure Guard" fired — sensor ... = 8.5 (above 7)"
-```
-
-### 4. Frontend — Automation Builder
-
-1. Navigate to `/#/admin/builder`
-2. A "Settings" button and a trigger badge appear above the canvas
-3. Click Settings → modal opens
-4. Select "Scheduled" → cron preset dropdown appears
-5. Select "Every hour" → badge updates to `⏱ 0 * * * *`
-6. Check "Active" → Save Settings
-7. Canvas saves; backend logs show the cron job registered
-8. Select "Sensor Threshold" → sensor dropdown loads from API
-9. Pick a sensor, set condition "above" + threshold "7.5"
-10. Save — MQTT message to that sensor's topic triggers execution
+- `dia.CommandManager` tracks: add/remove elements, position changes, attribute changes.
+  It does NOT track viewport changes (zoom/pan) — those remain non-undoable (by design).
+- The `try/catch` around `commandManager.reset()` guards against any version of JointJS
+  where the method name differs; history simply won't clear if the call fails, but the
+  canUndo/canRedo state flags are still set to false.
+- The Undo/Redo buttons use `fa-undo` / `fa-redo` icons from FontAwesome 6 (already
+  in the project via `@fortawesome/fontawesome-free`).
+- TASK 10 (single-incoming-edge rule) will add a `validateConnection` change; the
+  CommandManager will automatically track those connection mutations too — no extra work needed.

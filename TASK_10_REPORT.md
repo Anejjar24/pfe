@@ -1,198 +1,157 @@
-# Task 10 Report — P7: Industrial Workflow Blocks
+# TASK 10 — One Incoming Edge Per Input Port
 
-**Status:** DONE  
-**Date:** 2026-05-13  
-**Corresponds to:** NEXT_DEVELOPMENT_STEPS.md → P7 (Week 3)
+## Status: DONE
 
 ---
 
-## What Was Changed
+## What Was Changed and Why
 
-### 1. `frontend/src/data/blocks.js`
+Nothing in the original codebase prevented two (or more) edges from wiring into the
+same input port on a node.  At execution time `WorkflowRunner` picks
+`previousEdges[0]` — so a second wire is silently ignored, making the workflow
+non-deterministic from the operator's perspective.
 
-Added **7 new block definitions** to the `workflowBlocks` array.  
-(`delay` already existed in the file — not duplicated.)
+The fix enforces the invariant at **two independent layers**:
 
----
+| Layer | Mechanism | When it fires |
+|-------|-----------|---------------|
+| UI (canvas) | JointJS `validateConnection` extended with a port-occupancy scan | While the user is dragging a new link; JointJS won't let the connection "snap" if the port is occupied |
+| Backend | `FlowValidatorService` — new `occupiedPorts` Set in the edge loop | On every `POST /flows`, `PUT /flows/:id`, and `POST /flows/execute`; catches programmatic submissions that bypass the canvas |
 
-## New Blocks Added
-
-### Industrial category
-
-#### `sensor-read` — Sensor Read
-- **Color:** `#0ea5e9` (blue)
-- **Icon:** `fa-microchip`
-- **Inputs:** `trigger`
-- **Outputs:** `value`, `status`
-- **Properties:**
-  - `label` (text)
-  - `sensorId` (text) — UUID of the target sensor
-- **Runtime contract:** backend handler queries `SensorRepository` by `sensorId`, returns `{ value, unit, timestamp, status }` on the `value` port and sensor status on the `status` port.
+The UI layer provides **immediate visual feedback** (the target magnet turns grey
+rather than green when occupied); the backend layer is the **safety net**.
 
 ---
 
-#### `threshold-check` — Threshold Check
-- **Color:** `#f59e0b` (amber)
-- **Icon:** `fa-sliders`
-- **Inputs:** `value`
-- **Outputs:** `pass`, `breach`
-- **Properties:**
-  - `label` (text)
-  - `minThreshold` (number, default 0)
-  - `maxThreshold` (number, default 100)
-  - `mode` (select: `between` / `above_max` / `below_min`)
-- **Runtime contract:** compares incoming value against thresholds; routes to `pass` if within bounds or `breach` if outside.
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `frontend/src/hooks/useJointGraph.js` | Extended `validateConnection` with port-occupancy check using `graph.getLinks()` |
+| `backend/src/flows/flow-validator.service.ts` | Added `occupiedPorts: Set<string>` in edge loop; throws `BadRequestException` on duplicate `(target, targetPort)` |
 
 ---
 
-#### `pump-control` — Pump Control
-- **Color:** `#6366f1` (indigo)
-- **Icon:** `fa-rotate`
-- **Inputs:** `trigger`
-- **Outputs:** `sent`
-- **Properties:**
-  - `label` (text)
-  - `deviceId` (text) — target device identifier
-  - `command` (select: `start` / `stop` / `toggle`)
-  - `topic` (text, optional override — defaults to `devices/{deviceId}/commands`)
-- **Runtime contract:** publishes `{ command, deviceId, timestamp }` to the MQTT topic via `MqttClient.publish()`.
+## Diff Summary
 
----
-
-#### `alert-trigger` — Alert Trigger
-- **Color:** `#ef4444` (red)
-- **Icon:** `fa-triangle-exclamation`
-- **Inputs:** `trigger`
-- **Outputs:** `alert`
-- **Properties:**
-  - `label` (text)
-  - `severity` (select: `info` / `warning` / `error` / `critical`)
-  - `type` (select: `threshold_violation` / `sensor_offline` / `maintenance_due` / `system_error` / `anomaly` / `critical_event`)
-  - `message` (textarea)
-  - `stationId` (text, optional)
-- **Runtime contract:** calls `AlertsService.create()` with block properties; alert is persisted to DB and broadcast via WebSocket (`alert-created` event).
-
----
-
-#### `mqtt-publish` — MQTT Publish
-- **Color:** `#8b5cf6` (violet)
-- **Icon:** `fa-tower-broadcast`
-- **Inputs:** `payload`
-- **Outputs:** `sent`
-- **Properties:**
-  - `label` (text)
-  - `topic` (text, default `aquaflow/commands`)
-  - `qos` (select: `0` / `1` / `2`)
-  - `payload` (textarea, static JSON — merged with incoming `payload` port at runtime)
-- **Runtime contract:** calls `MqttClient.publish(topic, mergedPayload)`.
-
----
-
-#### `station-control` — Station Control
-- **Color:** `#10b981` (emerald)
-- **Icon:** `fa-building`
-- **Inputs:** `trigger`
-- **Outputs:** `done`
-- **Properties:**
-  - `label` (text)
-  - `stationId` (text)
-  - `status` (select: `normal` / `warning` / `critical` / `offline`)
-- **Runtime contract:** calls `StationsService.update(stationId, { status })`, which persists to DB and emits `station-status` WebSocket event automatically.
-
----
-
-### Integration category
-
-#### `http-request` — HTTP Request
-- **Color:** `#f97316` (orange)
-- **Icon:** `fa-globe`
-- **Inputs:** `body`
-- **Outputs:** `response`, `error`
-- **Properties:**
-  - `label` (text)
-  - `method` (select: `GET` / `POST` / `PUT` / `PATCH` / `DELETE`)
-  - `url` (text)
-  - `headers` (textarea, JSON)
-  - `body` (textarea, static JSON — merged with incoming `body` port at runtime)
-- **Runtime contract:** makes an HTTP call; routes response to `response` port on success, error details to `error` port on failure.
-
----
-
-## Why
-
-The workflow builder had only generic blocks (input/action/decision/output/delay/api/notification). None of them were aware of AquaFlow's domain — sensors, stations, MQTT, or alerts. Operators had no way to build automation rules like "if sensor X exceeds threshold → stop pump Y → create critical alert." These 7 blocks define the full vocabulary for industrial automation workflows on this platform.
-
-The blocks are **data-only** in this task. Backend execution handlers are implemented in Task 11 (P8).
-
----
-
-## How It Works (Architecture)
-
-```
-blocks.js                  → defines block vocabulary (this task)
-blockRegistry.js           → auto-indexes blocks by type (no change needed)
-blockFactory.js            → creates JointJS nodes from registry (no change needed)
-BlockSidebar.jsx           → groups blocks by category, renders drag list (no change needed)
-execution/handlers/*.ts    → implement runtime behavior (Task 11)
+### `useJointGraph.js` — validateConnection
+```diff
+         validateConnection: (sourceView, sourceMagnet, targetView, targetMagnet) => {
+           if (!sourceMagnet || !targetMagnet || sourceView === targetView) return false;
+-          return (
+-            sourceMagnet.getAttribute("port-group") === "output" &&
+-            targetMagnet.getAttribute("port-group") === "input"
+-          );
++          // Direction rule
++          if (
++            sourceMagnet.getAttribute("port-group") !== "output" ||
++            targetMagnet.getAttribute("port-group") !== "input"
++          ) return false;
++
++          // One-incoming-edge-per-input-port rule
++          const targetPortId = targetMagnet.getAttribute("port");
++          const targetCellId = String(targetView.model.id);
++          const alreadyOccupied = graph.getLinks().some((link) => {
++            const t = link.target();
++            return String(t.id) === targetCellId && t.port === targetPortId;
++          });
++          return !alreadyOccupied;
+         },
 ```
 
-The `blockRegistry` builds a `Map` from `workflowBlocks` on import — adding blocks to `blocks.js` is sufficient for them to appear in the sidebar, be draggable onto the canvas, and have their properties editable in the Properties Panel.
+### `flow-validator.service.ts` — edge loop
+```diff
++    const occupiedPorts = new Set<string>();
++
+     graph.edges.forEach((edge) => {
+       // ... existing source/target existence + self-loop checks ...
++
++      if (edge.targetPort) {
++        const portKey = `${edge.target}:${edge.targetPort}`;
++        if (occupiedPorts.has(portKey)) {
++          throw new BadRequestException(
++            `Port "${edge.targetPort}" on node "${edge.target}" already has an ` +
++            'incoming connection. Each input port may have at most one incoming edge.',
++          );
++        }
++        occupiedPorts.add(portKey);
++      }
+       adjacency.get(edge.source)!.push(edge.target);
+     });
+```
 
 ---
 
 ## How to Verify
 
-### UI verification (no backend needed)
-1. Start the frontend: `cd frontend && npm start`
-2. Log in → go to `/admin/builder`
-3. In the left sidebar (Block panel), verify new categories appear:
-   - **Industrial**: Sensor Read, Threshold Check, Pump Control, Alert Trigger, MQTT Publish, Station Control
-   - **Integration**: HTTP Request (alongside existing API block)
-4. Drag any new block to the canvas → node appears with correct color and label
-5. Click the node → Properties Panel shows the correct fields for that block type
-6. Search for "pump" in the block search bar → only Pump Control appears
+### Canvas — connection is blocked at the UI
+1. Open `/admin/builder`
+2. Drag an **Action** node (one `in` port) onto the canvas and connect a source to it
+3. Try to drag a **second** edge from a different node onto the same `in` port
+4. Expected: the port magnet stays **grey** (not green) while hovering — JointJS refuses
+   to snap the connection. Releasing the mouse drops the link without attaching it.
 
-### Registry verification (browser console)
-```js
-// Open browser console on /admin/builder
-import { getBlockCategories } from './registry/blockRegistry';
-// Or check via Redux DevTools / React DevTools
+### Canvas — other ports on the same node remain free
+1. Drag a **Decision** node (one `in`, two outputs: `true` / `false`)
+2. Connect a source to `in`
+3. Try to connect a second source to `in` — blocked ✓
+4. Verify that the `true` and `false` output ports on the Decision node are still
+   connectable outward (port-group = "output", not checked by this rule)
+
+### Backend — validator rejects duplicate ports
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@aquaflow.local","password":"Admin123!"}' | jq -r '.accessToken')
+
+curl -s -X POST http://localhost:3001/api/flows/execute \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "graph": {
+      "nodes": [
+        {"id":"n1","type":"input","data":{"value":"a"}},
+        {"id":"n2","type":"input","data":{"value":"b"}},
+        {"id":"n3","type":"action","data":{"operation":"multiply","factor":2}}
+      ],
+      "edges": [
+        {"id":"e1","source":"n1","target":"n3","targetPort":"in"},
+        {"id":"e2","source":"n2","target":"n3","targetPort":"in"}
+      ]
+    },
+    "input": {}
+  }' | jq '{statusCode, message}'
 ```
+Expected: `{ "statusCode": 400, "message": "Port \"in\" on node \"n3\" already has an incoming connection..." }`
 
-### Expected block counts
-| Category | Blocks |
-|----------|--------|
-| Data | Input, Output |
-| Logic | Action, Decision |
-| Timing | Delay |
-| Integrations | API |
-| Messaging | Notification |
-| **Industrial** | **Sensor Read, Threshold Check, Pump Control, Alert Trigger, MQTT Publish, Station Control** |
-| **Integration** | **HTTP Request** |
+### Backend — edges without targetPort are unaffected
+Old workflows serialized without port metadata (no `targetPort` field) pass the
+validator unchanged — the `if (edge.targetPort)` guard skips the occupancy check for
+null/undefined ports.
 
-### API tests (blocks are frontend-only in this task)
-No backend endpoints changed. Backend execution handlers for these blocks are implemented in Task 11.
+### UI — undo still works
+1. Connect a valid edge
+2. Ctrl+Z — edge is removed by undo
+3. The port is now free again; a new edge can be drawn to it
 
 ---
 
 ## Expected Results
 
-| Action | Expected |
-|--------|----------|
-| Open `/admin/builder` | 7 new blocks visible in sidebar |
-| Industrial category | 6 blocks listed |
-| Integration category | HTTP Request block listed (alongside existing API) |
-| Drag Sensor Read to canvas | Node appears in `#0ea5e9` blue with `trigger` input port and `value`/`status` output ports |
-| Drag Threshold Check to canvas | Node appears in `#f59e0b` amber with `value` input, `pass`/`breach` output ports |
-| Click any new block | Properties panel shows correct fields |
-| Search "alert" | Alert Trigger block shown |
-| Search "mqtt" | MQTT Publish block shown |
+| Scenario | Before | After |
+|----------|--------|-------|
+| Second edge to occupied port (canvas) | Allowed, silently ignored at runtime | Blocked by `validateConnection`; magnet stays grey |
+| Programmatic duplicate port (API) | Accepted, non-deterministic execution | `400 Bad Request` with clear message |
+| Edges without `targetPort` field (legacy) | Validated normally | Still validated normally (guard skips null) |
+| Undo of an edge frees the port | N/A | Port becomes occupiable again immediately |
 
 ---
 
-## Build Verification
+## Side Effects / Follow-up Notes
 
-```
-npm run build  →  ✅ Compiled successfully (data-only change, no new imports)
-Only pre-existing Header.js warnings remain
-```
+- **`markAvailable: true`** (already set on the paper) highlights eligible target
+  ports in green while dragging — the occupied port simply won't glow green, giving
+  the operator immediate visual feedback with no extra CSS needed.
+- **No migration needed** — the backend check uses `edge.targetPort` which is already
+  stored in every edge serialised since the project started.
+- TASK 11 will add the **Execution History Panel** using `GET /api/flows/:id/executions`.

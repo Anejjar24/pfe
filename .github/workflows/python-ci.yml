@@ -1,0 +1,65 @@
+name: Python CI (Data Pipeline)
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'data-pipeline/**'
+      - '.github/workflows/python-ci.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'data-pipeline/**'
+      - '.github/workflows/python-ci.yml'
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: data-pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install dev dependencies
+        run: pip install flake8 pytest pytest-cov
+
+      - name: Lint with flake8
+        run: |
+          # Stop on syntax errors or undefined names first (E9, F63, F7, F82)
+          flake8 kafka_to_minio.py spark_jobs/aggregate_sensor_kpis.py spark_jobs/streaming_anomaly_detector.py \
+            --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Warn on style issues (max-line-length=120); don't fail the build
+          flake8 kafka_to_minio.py spark_jobs/aggregate_sensor_kpis.py spark_jobs/streaming_anomaly_detector.py \
+            --count --max-line-length=120 --statistics --exit-zero
+
+      - name: Run unit tests with coverage
+        # PySpark Spark-cluster tests are skipped automatically (no cluster in CI)
+        run: |
+          python -m pytest tests/test_kafka_to_minio.py tests/test_anomaly_detection.py \
+            -v --tb=short \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --ignore=tests/test_aggregate_kpis.py
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-coverage
+          path: data-pipeline/coverage.xml
+          retention-days: 14

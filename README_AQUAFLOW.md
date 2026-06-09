@@ -1,584 +1,590 @@
-# AquaFlow: Industrial Water Station Supervision Platform
+# AquaFlow — Industrial Water Station Supervision Platform
 
-## Executive Summary
+> **Version 2.0** · NestJS 10 · React 18 · TimescaleDB · Kafka · Spark · MinIO
 
-**AquaFlow** is a professional industrial SCADA-like platform designed to transform drinking water station supervision through real-time monitoring, intelligent automation, and comprehensive analytics. Built by extending an existing workflow-builder project, AquaFlow preserves the core architecture while adding enterprise-grade features for water facility management.
-
----
-
-## What is AquaFlow?
-
-AquaFlow is an intelligent supervision and analytics platform inspired by SCADA systems and industrial IoT dashboards. It provides:
-
-### Core Capabilities
-- **Real-Time Monitoring**: Live sensor data from water treatment facilities
-- **IoT Integration**: MQTT-based sensor ingestion from pumps, pressure gauges, flow meters
-- **Intelligent Alerts**: Threshold-based and anomaly-detection alerts
-- **Maintenance Management**: Intervention tracking, technician assignment, history
-- **Visual Workflows**: Drag-and-drop automation builder for industrial logic
-- **GIS Visualization**: Station mapping with live status indicators
-- **Advanced Analytics**: Trend analysis, anomaly detection, KPI calculation
-- **Reporting**: PDF/Excel reports with customizable templates
-- **User Management**: Role-based access control (Admin, Operator, Technician, Analyst)
-
-### Design Philosophy
-- **Preserve Existing**: Keep the current workflow builder and extend it
-- **Enterprise-Ready**: Production-grade security, performance, scalability
-- **Modular Architecture**: Feature-based modules for easy maintenance
-- **Real-Time First**: WebSocket-powered live updates throughout
-- **Data-Driven**: PostgreSQL persistence, comprehensive audit trails
+AquaFlow is a production-grade SCADA-inspired platform for drinking-water facility management. It combines real-time IoT monitoring, intelligent automation, a big-data analytics pipeline, and a visual workflow builder into a single unified application.
 
 ---
 
-## Architecture Overview
+## Table of Contents
 
-### Three-Tier Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    Frontend (React)                  │
-│  - Dashboard, Monitoring, Alerts, Maps, Analytics   │
-│  - Redux State, WebSocket Integration, TailwindCSS  │
-│  - Modular Feature Structure (Stations, IoT, etc.)  │
-└─────────────────┬───────────────────────────────────┘
-                  │
-                  │ REST API + WebSocket
-                  │
-┌─────────────────┴───────────────────────────────────┐
-│                 Backend (NestJS)                     │
-│  - Authentication, CRUD, Business Logic             │
-│  - WebSocket Gateway, Event Broadcasting            │
-│  - Workflow Execution Engine                        │
-│  - MQTT Client Integration                          │
-└─────────────────┬───────────────────────────────────┘
-                  │
-        ┌─────────┼─────────┐
-        │         │         │
-   ┌────▼────┐  ┌─▼──┐  ┌─▼─────┐
-   │ Database │  │ MQTT│  │ Socket │
-   │ PostgreSQL│ │ Broker   │ Server  │
-   └──────────┘  └─────┘  └───────┘
-```
-
-### Key Components
-
-**Frontend**
-- React 18 with Redux Toolkit state management
-- 11 feature modules (dashboard, stations, monitoring, alerts, etc.)
-- Real-time updates via Socket.io
-- TailwindCSS styling with Framer Motion animations
-- React Leaflet for GIS visualization
-
-**Backend**
-- NestJS framework with TypeScript
-- 10+ modular services (auth, stations, sensors, alerts, etc.)
-- PostgreSQL database via TypeORM
-- WebSocket gateway for real-time events
-- MQTT client for IoT device communication
-- JWT authentication with role-based guards
-
-**Infrastructure**
-- PostgreSQL for persistence
-- Redis for caching
-- Mosquitto MQTT broker for sensor data
-- Docker containerization
-- Environment-based configuration
+1. [What is AquaFlow?](#1-what-is-aquaflow)
+2. [Architecture at a Glance](#2-architecture-at-a-glance)
+3. [Technology Stack](#3-technology-stack)
+4. [Docker Services Map](#4-docker-services-map)
+5. [Feature Modules](#5-feature-modules)
+6. [Analytics — Operator Workbench](#6-analytics--operator-workbench)
+7. [Big Data Pipeline](#7-big-data-pipeline)
+8. [Workflow Builder](#8-workflow-builder)
+9. [API Reference](#9-api-reference)
+10. [Database Schema](#10-database-schema)
+11. [Security & RBAC](#11-security--rbac)
+12. [Getting Started (5 minutes)](#12-getting-started-5-minutes)
+13. [Default Credentials & Ports](#13-default-credentials--ports)
+14. [Environment Variables](#14-environment-variables)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
-## Project Structure
+## 1. What is AquaFlow?
+
+AquaFlow gives water-utility operators a single pane of glass over their entire sensor network:
+
+| Capability | What it does |
+|---|---|
+| **Live Monitoring** | Sub-second WebSocket updates from MQTT sensors |
+| **Intelligent Alerts** | Threshold rules + AI-grade z-score anomaly detection |
+| **Visual Automation** | Drag-and-drop workflow builder with 23 industrial block types |
+| **Big-Data Analytics** | Kafka → MinIO data lake → PySpark KPIs → TimescaleDB |
+| **Operator Workbench** | 4-tab analytics dashboard: Overview, Anomalies, Trends, Station Detail |
+| **Maintenance** | Full intervention lifecycle (create → assign → resolve) |
+| **GIS Map** | Leaflet station map with live status indicators |
+| **Reporting** | PDF / Excel export with customisable templates |
+| **Role-Based Access** | Admin · Operator · Technician · Analyst |
+
+---
+
+## 2. Architecture at a Glance
 
 ```
-pfe-project/
-├── AQUAFLOW_ARCHITECTURE.md          # Detailed design (this!)
-├── IMPLEMENTATION_ROADMAP.md         # 4-phase implementation plan
-├── QUICK_START.md                     # Code examples and templates
-│
-├── frontend/src/
-│   ├── modules/                       # Feature-based modules
-│   │   ├── auth/                      # Login, registration
-│   │   ├── dashboard/                 # KPI, charts, alerts feed
-│   │   ├── stations/                  # Station management CRUD
-│   │   ├── monitoring/                # Real-time sensor data
-│   │   ├── alerts/                    # Alert management
-│   │   ├── maintenance/               # Maintenance workflows
-│   │   ├── map/                       # GIS visualization
-│   │   ├── analytics/                 # Trends, anomalies, KPIs
-│   │   ├── reports/                   # Report generation
-│   │   ├── iot/                       # Device management
-│   │   ├── automation/                # Workflow builder (extended)
-│   │   └── notifications/             # Alerts and channels
-│   ├── store/                         # Redux state management
-│   ├── services/                      # API clients
-│   ├── hooks/                         # Custom React hooks
-│   ├── components/                    # Reusable UI components
-│   └── utils/                         # Utilities and helpers
-│
-└── backend/src/
-    ├── database/                      # TypeORM entities & config
-    │   └── entities/                  # User, Station, Sensor, etc.
-    ├── auth/                          # JWT, strategies, guards
-    ├── stations/                      # Station CRUD
-    ├── sensors/                       # Sensor management
-    ├── alerts/                        # Alert rules & processing
-    ├── maintenance/                   # Maintenance workflows
-    ├── iot/                           # MQTT client & handlers
-    ├── realtime/                      # WebSocket gateway
-    ├── analytics/                     # Trend & anomaly processing
-    ├── reports/                       # PDF/Excel generation
-    ├── notifications/                 # Email, SMS, push
-    ├── execution/                     # Workflow runner (extended)
-    └── common/                        # Guards, decorators, pipes
+┌──────────────────────────────────────────────────────────────────┐
+│  Browser  (React 18 + Redux Toolkit + Reactstrap + Chart.js 2)   │
+│  Modules: Dashboard · Stations · Monitoring · Alerts ·           │
+│           Analytics (Operator Workbench) · Automation · Reports  │
+└───────────────────┬──────────────────────────────────────────────┘
+                    │  REST /api  +  WebSocket (Socket.io)
+┌───────────────────▼──────────────────────────────────────────────┐
+│  Backend  (NestJS 10 · TypeScript · TypeORM)                     │
+│  Auth · Stations · Sensors · Alerts · Analytics · Flows ·        │
+│  IoT (MQTT) · Realtime Gateway · Kafka Consumer                  │
+└──────┬──────────┬────────────┬──────────────┬────────────────────┘
+       │          │            │              │
+  ┌────▼────┐ ┌──▼───┐ ┌─────▼──────┐ ┌────▼───────┐
+  │TimescaleDB│ │Redis │ │ Mosquitto  │ │   Kafka    │
+  │(PostgreSQL│ │  7   │ │  MQTT 2   │ │  3.6 KRaft │
+  │ + TSB ext)│ │cache │ │  broker   │ │  (no ZK)   │
+  └──────────┘ └──────┘ └────────────┘ └─────┬──────┘
+                                              │
+              ┌───────────────────────────────▼──────────────────┐
+              │            Big Data Pipeline                      │
+              │  kafka-to-minio ──► MinIO (S3 data lake)         │
+              │                         │                         │
+              │              PySpark 3.5 (batch + streaming)      │
+              │              aggregate KPIs  │  anomaly detector  │
+              │                         ▼                         │
+              │              TimescaleDB sensor_aggregates        │
+              └──────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Technology Stack
+## 3. Technology Stack
 
 ### Frontend
-- **Framework**: React 18.2
-- **State**: Redux Toolkit
-- **Styling**: TailwindCSS
-- **Charts**: Recharts
-- **Animations**: Framer Motion
-- **Maps**: React Leaflet
-- **Real-time**: Socket.io-client
-- **Routing**: React Router v6
-- **HTTP**: Axios
-- **Forms**: React Hook Form + Zod
+
+| Package | Version | Role |
+|---|---|---|
+| React | 18.2 | UI framework |
+| Redux Toolkit | latest | Global state |
+| Reactstrap | 8 | Bootstrap 4 components |
+| Chart.js | **2.9.4** | Charts (v2 API) |
+| react-chartjs-2 | **2.11.2** | Chart components |
+| React Leaflet | 3 | GIS station map |
+| Socket.io-client | 4 | Real-time WebSocket |
+| Axios | latest | HTTP client |
+| JointJS | 3 | Workflow canvas |
+| React Router | 6 | SPA routing |
 
 ### Backend
-- **Framework**: NestJS 10
-- **Language**: TypeScript
-- **ORM**: TypeORM
-- **Database**: PostgreSQL
-- **Real-time**: Socket.io
-- **IoT**: MQTT.js
-- **Auth**: JWT, Passport.js
-- **Validation**: Class-validator
-- **Testing**: Jest
+
+| Package | Version | Role |
+|---|---|---|
+| NestJS | 10 | Server framework |
+| TypeORM | 0.3 | ORM / migrations |
+| Passport + JWT | latest | Authentication |
+| Socket.io | 4 | WebSocket gateway |
+| MQTT.js | 5 | Mosquitto client |
+| KafkaJS | 2 | Kafka producer / consumer |
+| node-minio | latest | MinIO SDK |
+| Class-validator | latest | DTO validation |
+| Jest | 29 | Unit tests |
 
 ### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Database**: PostgreSQL 15
-- **Cache**: Redis 7
-- **Message Broker**: Mosquitto MQTT
-- **Version Control**: Git
+
+| Service | Image | Purpose |
+|---|---|---|
+| TimescaleDB | `timescale/timescaledb:2.14.2-pg15` | Primary database + time-series |
+| Redis | `redis:7-alpine` | Cache (60 s sensor list) |
+| Mosquitto | `eclipse-mosquitto:2` | MQTT IoT broker |
+| Kafka | `bitnami/kafka:3.6` | Event streaming (KRaft, no ZK) |
+| MinIO | `minio/minio:latest` | S3-compatible data lake |
+| Spark | `bitnami/spark:3.5` | Batch KPIs + streaming anomaly |
 
 ---
 
-## Key Features by Module
+## 4. Docker Services Map
 
-### 1. Authentication & RBAC
-- JWT-based authentication
-- Refresh token mechanism
-- Four roles: Admin, Operator, Technician, Analyst
-- Protected routes and endpoint guards
-- Secure password hashing (bcrypt)
+| Container | Image | Ports | Purpose |
+|---|---|---|---|
+| `aquaflow-postgres` | TimescaleDB 2.14 | 5432 | Primary DB |
+| `aquaflow-redis` | Redis 7 | 6379 | API cache |
+| `aquaflow-mosquitto` | Mosquitto 2 | 1883, 9001 (WS) | MQTT broker |
+| `aquaflow-kafka` | Bitnami Kafka 3.6 | 9092 | Event bus |
+| `aquaflow-minio` | MinIO | 9000 (API), **9002** (console) | Data lake |
+| `aquaflow-minio-init` | MinIO MC | — | Creates bucket structure (one-shot) |
+| `aquaflow-backend` | NestJS build | **3001** | REST API + WebSocket |
+| `aquaflow-kafka-to-minio` | Python archiver | — | Kafka → Parquet on MinIO |
+| `aquaflow-spark-master` | Bitnami Spark 3.5 | **8080** (UI), 7077 | Spark master |
+| `aquaflow-spark-worker` | Bitnami Spark 3.5 | — | Spark worker (1 GB / 2 cores) |
+| `aquaflow-spark-anomaly` | Bitnami Spark 3.5 | — | Streaming anomaly detector |
+| `aquaflow-frontend` | Nginx + React build | **3000** | SPA |
 
-### 2. Dashboard
-- Real-time KPI cards (pressure, flow, quality)
-- Live charts with Recharts
-- Active alerts feed
-- Station status overview
-- Energy consumption metrics
-- Animated transitions with Framer Motion
-
-### 3. Station Management
-- Full CRUD operations
-- Geographic coordinates with GIS integration
-- Equipment tracking
-- Capacity and status management
-- Historical data and analytics
-
-### 4. Real-Time Monitoring
-- Live sensor data visualization
-- Animated gauge indicators
-- Threshold violation alerts
-- Multi-sensor comparison
-- WebSocket-powered updates (<500ms latency)
-
-### 5. Alerts Module
-- Threshold-based alert generation
-- Severity levels (low, medium, high, critical)
-- Alert acknowledgment workflow
-- Comprehensive filtering and search
-- Timeline view of alert history
-
-### 6. Maintenance Management
-- Intervention creation and tracking
-- Technician assignment
-- Status workflow (pending → in-progress → completed)
-- Maintenance history
-- Timeline visualization
-
-### 7. GIS Map
-- Interactive station mapping
-- Color-coded status indicators
-- Station popups with key metrics
-- Filtering by region and status
-- Real-time status updates
-
-### 8. Analytics
-- Trend analysis over time periods
-- Anomaly detection algorithms
-- KPI calculations
-- Predictive metrics (optional)
-- Period comparison views
-
-### 9. Reports
-- Customizable report builder
-- PDF export functionality
-- Excel export with formatting
-- Report scheduling
-- Predefined templates
-
-### 10. IoT Integration
-- MQTT broker connectivity
-- Sensor data ingestion
-- Device status monitoring
-- Topic-based subscriptions
-- Payload validation
-
-### 11. Automation & Workflows
-- Extended workflow builder (existing + new blocks)
-- Industrial action blocks (sensor triggers, alerts, maintenance, MQTT, etc.)
-- Workflow execution with logging
-- Real-time event triggers
-- Integration with all other modules
-
----
-
-## Implementation Phases
-
-### Phase 1: Core Infrastructure (Weeks 1-3)
-- Database setup with TypeORM and PostgreSQL
-- JWT authentication implementation
-- WebSocket/Socket.io real-time infrastructure
-- MQTT client integration
-- Redux state management setup
-
-**Deliverables**: Working auth, database, real-time pipeline, MQTT connection
-
-### Phase 2: Feature Modules (Weeks 4-8)
-- Frontend modular architecture
-- Dashboard with live data
-- Station CRUD operations
-- Real-time monitoring interface
-- Alerts and maintenance management
-- GIS map visualization
-- Backend APIs for all modules
-
-**Deliverables**: Full-featured platform UI, complete REST APIs, WebSocket integration
-
-### Phase 3: Workflow Extension (Weeks 9-11)
-- Industrial workflow blocks (sensor-trigger, alert-sender, etc.)
-- Execution handlers for each block type
-- Workflow automation integration
-- Real-time event triggering
-
-**Deliverables**: Extended workflow builder, industrial automation capability
-
-### Phase 4: Advanced Features (Weeks 12-16)
-- Analytics and trend processing
-- Report generation (PDF/Excel)
-- IoT device management
-- Notifications system
-- Performance optimization
-- UI/UX refinement
-
-**Deliverables**: Complete platform, advanced features, production-ready code
-
----
-
-## Getting Started
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- Docker & Docker Compose
-- PostgreSQL 15
-- Git
-
-### Quick Start
-```bash
-# 1. Clone the repository
-git clone <repo-url>
-cd pfe-project
-
-# 2. Install dependencies
-cd frontend && npm install
-cd ../backend && npm install
-
-# 3. Set up environment variables
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# 4. Start infrastructure
-docker-compose up -d
-
-# 5. Run migrations
-cd backend && npm run typeorm migration:run
-
-# 6. Start backend (from backend directory)
-npm run start:dev
-
-# 7. Start frontend (from frontend directory)
-npm start
-
-# 8. Access application
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:3000/api
-# WebSocket: ws://localhost:3001
+MinIO bucket layout created by `minio-init`:
+```
+aquaflow-lake/
+├── raw/sensors/          ← Parquet archives from Kafka
+├── processed/hourly/     ← Spark hourly KPI output
+├── processed/daily/      ← Spark daily KPI output
+└── models/               ← Reserved for future ML artefacts
 ```
 
-For detailed code examples, see **QUICK_START.md**.
-
 ---
 
-## API Routes Summary
+## 5. Feature Modules
 
 ### Authentication
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - Login with credentials
-- `POST /api/auth/refresh` - Refresh access token
-- `POST /api/auth/logout` - Logout
+- JWT access token (1 h) + refresh token (7 d)
+- bcrypt password hashing
+- Four roles: `admin` · `operator` · `technician` · `analyst`
+- Every API endpoint is guard-protected
+
+### Dashboard
+- KPI cards: total stations, active sensors, open alerts, pending maintenance
+- Live alert feed via WebSocket
+- Station status summary
 
 ### Stations
-- `GET /api/stations` - List all stations (paginated)
-- `POST /api/stations` - Create new station
-- `GET /api/stations/:id` - Get station details
-- `PUT /api/stations/:id` - Update station
-- `DELETE /api/stations/:id` - Delete station
+- Full CRUD with pagination and search
+- GPS coordinates stored (lat/lon)
+- Linked sensors, alerts, maintenance history
+- Interactive Leaflet map with colour-coded status pins
 
-### Sensors
-- `GET /api/sensors` - List sensors
-- `POST /api/sensors` - Create sensor
-- `GET /api/sensors/:id` - Get sensor details
-- `GET /api/sensors/:id/data` - Get sensor readings
+### Real-Time Monitoring
+- Live sensor readings pushed via Socket.io (`sensor-update` events)
+- Animated gauge widgets
+- Multi-sensor comparison view
+- <500 ms end-to-end latency (MQTT → WS → browser)
 
 ### Alerts
-- `GET /api/alerts` - List alerts
-- `POST /api/alerts` - Create alert
-- `PATCH /api/alerts/:id/acknowledge` - Acknowledge alert
-- `DELETE /api/alerts/:id` - Clear alert
+- Threshold-based auto-generation (min/max per sensor)
+- z-score anomaly alerts from the Spark streaming detector
+- Severity levels: `info` · `warning` · `error` · `critical`
+- Acknowledge / resolve workflow
+- Full history with filtering
 
 ### Maintenance
-- `GET /api/maintenance` - List interventions
-- `POST /api/maintenance` - Create intervention
-- `PATCH /api/maintenance/:id` - Update intervention
-- `PATCH /api/maintenance/:id/assign` - Assign technician
+- Intervention lifecycle: `scheduled` → `in_progress` → `completed`
+- Technician assignment
+- Notes and history timeline
 
-### Workflows
-- `GET /api/workflows` - List workflows
-- `POST /api/workflows` - Create workflow
-- `POST /api/workflows/:id/execute` - Execute workflow
+### IoT Device Management
+- MQTT topic: `sensors/{sensorId}/data`
+- Payload validation and sensor linkage
+- Device status tracking
 
-### Analytics
-- `GET /api/analytics/trends` - Get trend data
-- `GET /api/analytics/anomalies` - Get anomalies
-- `GET /api/analytics/kpis` - Get KPIs
+### Reports
+- PDF and Excel export
+- Customisable date-range and station filters
 
-Full API documentation available in architecture guide.
-
----
-
-## Database Schema Highlights
-
-### Core Entities
-- **User**: Credentials, roles, profile
-- **Station**: Facility info, location, capacity, status
-- **Sensor**: Equipment with thresholds, types, location
-- **SensorData**: Time-series readings with timestamps
-- **Alert**: Threshold violations with severity and status
-- **Maintenance**: Intervention records with assignments
-- **Workflow**: Automation rules, graph JSON, execution logs
-- **Notification**: Delivery logs for alerts and messages
-
-### Relationships
-- Users create and manage Stations
-- Stations contain Sensors
-- Sensors generate SensorData and Alerts
-- Alerts trigger Notifications
-- Workflows automate all of the above
+### Notifications
+- In-app notification centre
+- Email / SMS delivery (pluggable)
 
 ---
 
-## Security Considerations
+## 6. Analytics — Operator Workbench
 
-- **Authentication**: JWT tokens with refresh mechanism
-- **Authorization**: Role-based access control on all endpoints
-- **Password Security**: Bcrypt hashing with salt rounds
-- **Input Validation**: Class-validator on all DTOs
-- **Error Handling**: Safe error messages without data leakage
-- **CORS**: Configured for frontend domain only
-- **HTTPS**: Recommended for production deployment
+The Analytics module is a **4-tab Operator Workbench** — a unified business-oriented dashboard with zero technical jargon visible to the end user.
 
----
+### Global header (always visible)
+- 4 KPI cards: Monitoring Stations · Active Sensors · Open Alerts · Scheduled Maintenance
+- Pulsing green dot + "Last measurement: X min ago" live freshness banner
 
-## Performance Targets
+### Tab 1 — Overview
+| Panel | Data source |
+|---|---|
+| Stations by Status (doughnut) | `GET /analytics/station-status` |
+| Alerts by Severity (doughnut) | Alert store |
+| Station Health Grid | Per-station cards with sensor health bar + alert badges |
+| 6-Hour Network Activity (line) | `GET /analytics/network-trend` |
+| Recent Alert Feed | Last 10 alerts, scrollable |
 
-- **Dashboard Load**: <2 seconds
-- **API Response**: <100ms (p95)
-- **WebSocket Latency**: <500ms (real-time updates)
-- **Database Query**: <50ms (with proper indexing)
-- **Uptime SLA**: 95%+
-- **Concurrent Users**: 100+ simultaneous connections
+### Tab 2 — Anomaly Detection
+| Panel | Data source |
+|---|---|
+| Period selector (24 h / 7 d / 30 d) | re-fetches on change |
+| 4 summary stat cards | derived from timeline |
+| Events by Station (horizontal bar) | `GET /analytics/anomaly-timeline` |
+| Events by Type (horizontal bar) | same |
+| Chronological event timeline (table) | severity colour, z-score column |
+| Statistical anomaly detail (table) | `GET /analytics/kpis` (Spark) — graceful empty |
 
----
+### Tab 3 — Trends & History
+| Panel | Data source |
+|---|---|
+| Network Activity line chart | `GET /analytics/network-trend?hours=N` |
+| Top Sensors by Volume (horizontal bar) | `GET /analytics/system-metrics` |
+| Network Outlook (heuristic insight cards) | computed client-side |
+| Event Frequency over Time (bar) | anomaly timeline grouped by day/hour |
 
-## Monitoring & Observability
-
-Recommended additions (Phase 4+):
-- Centralized logging (Winston, ELK Stack)
-- Distributed tracing (Jaeger)
-- Metrics collection (Prometheus)
-- Application monitoring (New Relic, DataDog)
-- Error tracking (Sentry)
-- Health checks and liveness probes
-
----
-
-## Deployment
-
-### Development
-- Local environment with Docker Compose
-- Hot reload for code changes
-- SQLite optional for quick testing
-
-### Production
-- Docker containers for all services
-- PostgreSQL with replication
-- Redis cluster for caching
-- Load balancing (Nginx)
-- SSL/TLS certificates
-- Environment-based secrets
-- Database migrations with rollback
-- Automated backups
+### Tab 4 — Station Detail
+| Panel | Data source |
+|---|---|
+| Station picker + period toggle | `selectStationStatus` |
+| Station health KPI cards + progress bar | same |
+| All-sensors trend chart (multi-line) | `GET /analytics/stations/:id/history` |
+| Sensor picker (filtered by station) | `selectAnalyticsSensors` |
+| Sensor KPI cards (avg / min / max / stddev) | `GET /analytics/sensors/:id/stats` |
+| Sensor detail chart — avg line + min/max band + threshold dashes | same |
+| Station event history table | anomaly timeline filtered by station |
 
 ---
 
-## Testing Strategy
+## 7. Big Data Pipeline
 
-### Unit Tests
-- Service business logic
-- Utility functions
-- Component logic
-
-### Integration Tests
-- API endpoints
-- Database operations
-- WebSocket events
-- MQTT integration
-
-### E2E Tests
-- Critical user workflows
-- Authentication flows
-- Data persistence
-
----
-
-## Documentation
-
-This project includes comprehensive documentation:
-- **AQUAFLOW_ARCHITECTURE.md** - Detailed design and rationale
-- **IMPLEMENTATION_ROADMAP.md** - Phase-by-phase implementation guide
-- **QUICK_START.md** - Code templates and examples
-- **API Documentation** - OpenAPI/Swagger (to be generated)
-- **Database Schema** - SQL script and entity diagrams
-
----
-
-## Contributing
-
-### Code Standards
-- Use existing code patterns and conventions
-- Follow NestJS best practices
-- Follow React hooks best practices
-- Add unit tests for new functionality
-- Document complex business logic
-- Keep commits atomic and descriptive
-
-### Commit Messages
-Include co-author in commit messages:
 ```
-feat: Add sensor threshold validation
-
-Co-Authored-By: Oz <oz-agent@warp.dev>
+IoT devices
+    │  MQTT
+    ▼
+Eclipse Mosquitto
+    │
+    ▼
+NestJS Backend ──► Kafka topic: sensors.readings
+                            │
+          ┌─────────────────┴──────────────────┐
+          │                                    │
+          ▼                                    ▼
+  kafka-to-minio                  spark-anomaly-detector
+  (Python archiver)               (PySpark Structured Streaming)
+  Parquet → MinIO                 5-min sliding window, 1-min slide
+  raw/sensors/                    z-score ≥ 2.5 → sensors.anomalies
+                                            │
+          ┌─────────────────────────────────┘
+          ▼
+  NestJS KafkaConsumerService
+  reads sensors.anomalies → creates Alert in TimescaleDB
+          │
+  (periodic / manual)
+          ▼
+  aggregate_sensor_kpis.py  (PySpark batch job)
+  reads raw/ Parquet → avg/min/max/stddev/anomaly_flag
+  writes → MinIO processed/  +  TimescaleDB sensor_aggregates
 ```
 
----
+### Kafka topics
 
-## Support & Troubleshooting
+| Topic | Producer | Consumer(s) |
+|---|---|---|
+| `sensors.readings` | NestJS backend | kafka-to-minio, spark-anomaly-detector |
+| `sensors.anomalies` | spark-anomaly-detector | NestJS KafkaConsumerService |
 
-### Common Issues
+### MinIO data lake paths
 
-**Database Connection Error**
-- Verify PostgreSQL is running: `docker-compose ps`
-- Check DATABASE_URL in .env
-- Ensure database exists
+| Path | Format | Written by |
+|---|---|---|
+| `raw/sensors/` | Parquet | kafka-to-minio archiver |
+| `processed/hourly/` | Parquet | aggregate_sensor_kpis.py |
+| `processed/daily/` | Parquet | aggregate_sensor_kpis.py |
 
-**WebSocket Not Connecting**
-- Check REACT_APP_WS_URL in frontend .env
-- Verify backend is running: `npm run start:dev`
-- Check CORS configuration
+### TimescaleDB tables
 
-**MQTT Not Receiving Data**
-- Verify Mosquitto is running: `docker-compose ps`
-- Check MQTT_BROKER_URL in backend .env
-- Verify sensor is publishing to correct topics
+| Table | Type | Description |
+|---|---|---|
+| `sensor_data` | hypertable | Raw readings (timestamp, sensor_id, value) |
+| `sensor_data_hourly` | continuous aggregate | Hourly pre-aggregation |
+| `sensor_data_daily` | continuous aggregate | Daily pre-aggregation |
+| `sensor_aggregates` | regular table | Spark-computed KPIs per bucket |
 
-### Performance Debugging
-- Use Redux DevTools for state inspection
-- Check browser Network tab for API delays
-- Monitor database queries with TypeORM logging
-- Use Node.js profiler for backend bottlenecks
+### PySpark jobs
 
----
-
-## Roadmap & Future Enhancements
-
-### Short Term (Next Quarter)
-- [ ] Advanced analytics with ML models
-- [ ] Real-time anomaly detection
-- [ ] Multi-language support
-- [ ] Mobile app (React Native)
-
-### Medium Term (Next Year)
-- [ ] Third-party integrations (SAP, Salesforce)
-- [ ] Advanced reporting with BI tools
-- [ ] Machine learning predictions
-- [ ] Distributed system support
-
-### Long Term (2+ Years)
-- [ ] Edge computing integration
-- [ ] Blockchain for audit trails
-- [ ] GraphQL API
-- [ ] Cloud-native deployment
+| Script | Mode | Trigger |
+|---|---|---|
+| `base_job.py` | batch (smoke test) | manual spark-submit |
+| `aggregate_sensor_kpis.py` | batch | manual / scheduled cron |
+| `streaming_anomaly_detector.py` | structured streaming | always-on via docker service |
 
 ---
 
-## License
+## 8. Workflow Builder
 
-[Add your license here - MIT, Apache 2.0, etc.]
+The Workflow Builder is a **visual drag-and-drop automation editor** built on JointJS.
+
+### How it works
+1. Operator drags blocks onto the canvas and connects them
+2. Graph is serialised to JSON and saved via `POST /api/flows`
+3. Backend traverses the graph (BFS) and runs each node's handler
+4. Real-time execution log streams back via WebSocket
+
+### Block categories
+
+**General blocks (9)**
+`Start` · `End` · `Condition` · `Delay` · `HTTP Request` · `Email` · `Log` · `Variable Set` · `Variable Get`
+
+**Industrial blocks (14)**
+`Sensor Trigger` · `Alert Sender` · `Maintenance Creator` · `MQTT Publisher` · `Station Status Update` · `Sensor Data Reader` · `Threshold Check` · `Notification Sender` · `Report Generator` · `Data Aggregator` · `Schedule Trigger` · `Webhook` · `Data Transform` · `Multi-Condition`
+
+### Trigger types
+
+| Type | How |
+|---|---|
+| Manual | Click **Execute** in the UI |
+| Scheduled | Cron expression stored on the workflow |
+| Sensor Threshold | MQTT `sensors/+/data` event fires when value crosses threshold |
+
+### Backend execution
+- `FlowExecutorService` orchestrates BFS graph traversal
+- Each block type has a dedicated `Handler` class in `backend/src/execution/handlers/`
+- Execution logs persisted to `WorkflowExecution` entity
+- Errors isolated per-node; execution continues on non-critical failures
 
 ---
 
-## Contact & Support
+## 9. API Reference
 
-For questions or issues:
-- Create GitHub issues for bug reports
-- Submit pull requests with improvements
-- Contact development team: [your-email]
+### Authentication
+```
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/refresh
+POST   /api/auth/logout
+GET    /api/auth/me
+```
+
+### Stations
+```
+GET    /api/stations          ?page &limit &search &status
+POST   /api/stations
+GET    /api/stations/:id
+PUT    /api/stations/:id
+DELETE /api/stations/:id
+```
+
+### Sensors
+```
+GET    /api/sensors           ?stationId &type &status &limit
+POST   /api/sensors
+GET    /api/sensors/:id
+PUT    /api/sensors/:id
+DELETE /api/sensors/:id
+GET    /api/sensors/:id/data  ?from &to &limit
+```
+
+### Alerts
+```
+GET    /api/alerts            ?severity &status &stationId &limit
+POST   /api/alerts
+GET    /api/alerts/:id
+PATCH  /api/alerts/:id/acknowledge
+PATCH  /api/alerts/:id/resolve
+DELETE /api/alerts/:id
+```
+
+### Maintenance
+```
+GET    /api/maintenance
+POST   /api/maintenance
+GET    /api/maintenance/:id
+PATCH  /api/maintenance/:id
+PATCH  /api/maintenance/:id/assign
+```
+
+### Workflows (Automation)
+```
+GET    /api/flows
+POST   /api/flows
+GET    /api/flows/:id
+PUT    /api/flows/:id
+DELETE /api/flows/:id
+POST   /api/flows/:id/execute
+GET    /api/flows/:id/executions
+```
+
+### Analytics — Operator Workbench
+```
+GET    /api/analytics/overview
+GET    /api/analytics/station-status
+GET    /api/analytics/anomaly-timeline   ?hours &limit
+GET    /api/analytics/network-trend      ?hours
+GET    /api/analytics/data-freshness
+GET    /api/analytics/kpis               ?granularity &hours
+GET    /api/analytics/system-metrics     ?hours
+GET    /api/analytics/sensors/:id/stats  ?from &to &granularity
+GET    /api/analytics/stations/:id/history ?from &to &granularity
+GET    /api/analytics/pipeline/stats
+```
+
+### Health
+```
+GET    /api/health
+```
 
 ---
 
-## Acknowledgments
+## 10. Database Schema
 
-Built upon the existing workflow-builder project by extending it with enterprise industrial features while preserving the core architecture and user experience.
+### Core entities
+
+| Entity | Table | Key columns |
+|---|---|---|
+| User | `users` | id, email, password (bcrypt), role, firstname, lastname |
+| Station | `stations` | id, name, location, latitude, longitude, status, type |
+| Sensor | `sensors` | id, name, type, unit, minThreshold, maxThreshold, status, station_id |
+| SensorData | `sensor_data` | id, sensor_id, value, timestamp — **TimescaleDB hypertable** |
+| Alert | `alerts` | id, type, severity, status, message, data (jsonb), station_id, sensor_id |
+| Maintenance | `maintenance` | id, title, status, assignedTo, stationId, scheduledAt |
+| Workflow | `workflows` | id, name, graph (jsonb), trigger, cronExpression |
+| WorkflowExecution | `workflow_executions` | id, workflow_id, status, log (jsonb), startedAt, finishedAt |
+| SensorAggregate | `sensor_aggregates` | (sensor_id, bucket, granularity) PK, avg/min/max/stddev/anomaly_flag |
+| Notification | `notifications` | id, userId, message, read, createdAt |
+
+### TimescaleDB-specific objects
+
+```sql
+-- Hypertable (auto time-partitioning)
+SELECT create_hypertable('sensor_data', 'timestamp');
+
+-- Continuous aggregates
+CREATE MATERIALIZED VIEW sensor_data_hourly WITH (timescaledb.continuous) AS
+  SELECT time_bucket('1 hour', timestamp) AS bucket,
+         sensor_id, AVG(value) avg_value, ...;
+
+CREATE MATERIALIZED VIEW sensor_data_daily WITH (timescaledb.continuous) AS
+  SELECT time_bucket('1 day', timestamp) AS bucket, ...;
+```
 
 ---
 
-**Last Updated**: January 2024  
-**Version**: 1.0.0 - Initial Architecture & Planning
+## 11. Security & RBAC
 
+| Role | Stations | Sensors | Alerts | Maintenance | Analytics | Admin |
+|---|---|---|---|---|---|---|
+| **admin** | ✅ full | ✅ full | ✅ full | ✅ full | ✅ full | ✅ |
+| **operator** | ✅ read/write | ✅ read/write | ✅ ack | ✅ create | ✅ full | — |
+| **technician** | ✅ read | ✅ read | ✅ read | ✅ update own | ✅ read | — |
+| **analyst** | ✅ read | ✅ read | ✅ read | ✅ read | ✅ full | — |
+
+All endpoints protected with `JwtAuthGuard` + `RolesGuard`.
+
+---
+
+## 12. Getting Started (5 minutes)
+
+See **[QUICK_START.md](./QUICK_START.md)** for the complete first-run walkthrough.
+
+### One-liner
+```bash
+git clone <repo-url> pfe-project && cd pfe-project
+cp backend/.env.example backend/.env   # edit JWT_SECRET at minimum
+docker-compose up -d
+# wait ~45 s for all health-checks to pass
+# Frontend  → http://localhost:3000
+# API       → http://localhost:3001/api
+# MinIO UI  → http://localhost:9002   (aquaflow / aquaflow123)
+# Spark UI  → http://localhost:8080
+```
+
+---
+
+## 13. Default Credentials & Ports
+
+| Service | URL | Username | Password |
+|---|---|---|---|
+| **Frontend** | http://localhost:3000 | *(register first)* | — |
+| **Backend API** | http://localhost:3001/api | — | — |
+| **API docs (Swagger)** | http://localhost:3001/api/docs | — | — |
+| **MinIO console** | http://localhost:9002 | `aquaflow` | `aquaflow123` |
+| **Spark master UI** | http://localhost:8080 | — | — |
+| **PostgreSQL** | localhost:5432 | `postgres` | `postgres` |
+| **Redis** | localhost:6379 | — | — |
+| **MQTT** | localhost:1883 | — | — |
+| **Kafka** | localhost:9092 | — | — |
+
+---
+
+## 14. Environment Variables
+
+### `backend/.env`
+```env
+# ── Database (TimescaleDB) ───────────────────────────────────────
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_NAME=aquaflow
+
+# ── JWT ─────────────────────────────────────────────────────────
+JWT_SECRET=change-me-in-production-32chars-minimum
+JWT_REFRESH_SECRET=change-me-refresh-in-production-32chars
+JWT_EXPIRATION=3600
+JWT_REFRESH_EXPIRATION=604800
+
+# ── Server ──────────────────────────────────────────────────────
+PORT=3001
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3000
+
+# ── Redis ───────────────────────────────────────────────────────
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# ── MQTT ────────────────────────────────────────────────────────
+MQTT_BROKER_URL=mqtt://localhost:1883
+
+# ── Kafka ───────────────────────────────────────────────────────
+KAFKA_BROKERS=localhost:9092
+
+# ── MinIO (S3 data lake) ────────────────────────────────────────
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ACCESS_KEY=aquaflow
+MINIO_SECRET_KEY=aquaflow123
+MINIO_BUCKET=aquaflow-lake
+```
+
+### `frontend/.env`
+```env
+REACT_APP_API_URL=http://localhost:3001/api
+REACT_APP_WS_URL=http://localhost:3001
+```
+
+---
+
+## 15. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `docker-compose up` fails on Kafka | First boot (KRaft init) | `docker-compose restart kafka` |
+| Backend exits immediately | DB not ready | `docker-compose up -d --wait` or wait 30 s |
+| Analytics shows "No data" everywhere | No sensors reporting | Publish a test MQTT message (see QUICK_START.md §5) |
+| Station history 500 error | `time_bucket()` not available | Backend auto-falls back to `DATE_TRUNC`; check TimescaleDB extension |
+| MinIO bucket missing | `minio-init` failed | `docker-compose run --rm minio-init` |
+| Spark UI blank | Workers not connected | Check `docker-compose logs spark-worker` |
+| Chart.js errors in console | Wrong API version used | Project uses **Chart.js v2** — do not import v3 components |
+| CORS error from frontend | Wrong `FRONTEND_URL` in backend .env | Set `FRONTEND_URL=http://localhost:3000` |
+
+---
+
+## Documentation Index
+
+| File | Contents |
+|---|---|
+| **README_AQUAFLOW.md** | This file — full platform reference |
+| **QUICK_START.md** | Step-by-step first-run guide |
+| **AQUAFLOW_ARCHITECTURE.md** | Deep-dive architecture & design decisions |
+| **PROJECT_SETUP.md** | Dev environment setup (Windows/Linux) |
+| **WORKFLOW_BUILDER_COMPLETE.md** | Workflow builder technical reference |
+| **docs/general-blocks-guide.md** | General workflow block catalogue |
+| **docs/industrial-blocks-guide.md** | Industrial workflow block catalogue |
+
+---
+
+*Last updated: 2026-06-09 · AquaFlow v2.0*

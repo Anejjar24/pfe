@@ -14,9 +14,26 @@ frontend/.env
 # Generated with mosquitto_passwd — contains hashed credentials
 mosquitto/config/passwd
 
-# ── Docker Build Artifacts ────────────────────────────────────────────────────
+# ── Build & Compilation Artifacts ────────────────────────────────────────────
 backend/dist/
 frontend/build/
+
+# ── Test Coverage Reports ─────────────────────────────────────────────────────
+coverage/
+backend/coverage/
+frontend/coverage/
+*.lcov
+
+# ── Python / PySpark Artifacts ───────────────────────────────────────────────
+data-pipeline/__pycache__/
+data-pipeline/**/__pycache__/
+data-pipeline/.pytest_cache/
+data-pipeline/**/*.pyc
+data-pipeline/spark_jobs/__pycache__/
+/tmp/spark-checkpoints/
+
+# ── TypeScript build info ─────────────────────────────────────────────────────
+*.tsbuildinfo
 
 # ── Node Modules ─────────────────────────────────────────────────────────────
 node_modules/

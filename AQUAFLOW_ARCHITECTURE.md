@@ -1,1002 +1,885 @@
-# AquaFlow: Complete Architecture Guide
+# AquaFlow — Complete Architecture Guide
+
+> **Version 2.0** — reflects all implemented modules including the Big Data Pipeline, Operator Workbench Analytics, and extended Workflow Builder.
+
+---
 
 ## Table of Contents
-1. [Project Overview](#project-overview)
-2. [Folder Structure](#folder-structure)
-3. [Frontend Architecture](#frontend-architecture)
-4. [Backend Architecture](#backend-architecture)
-5. [Database Schema](#database-schema)
-6. [Workflow Extension Strategy](#workflow-extension-strategy)
-7. [Real-Time Architecture](#real-time-architecture)
-8. [API Routes](#api-routes)
-9. [Authentication & RBAC](#authentication--rbac)
-10. [Integration Patterns](#integration-patterns)
+
+1. [System Overview](#1-system-overview)
+2. [Folder Structure](#2-folder-structure)
+3. [Frontend Architecture](#3-frontend-architecture)
+4. [Backend Architecture](#4-backend-architecture)
+5. [Database Design](#5-database-design)
+6. [Real-Time Architecture](#6-real-time-architecture)
+7. [Big Data Pipeline](#7-big-data-pipeline)
+8. [Analytics — Operator Workbench](#8-analytics--operator-workbench)
+9. [Workflow Builder Architecture](#9-workflow-builder-architecture)
+10. [API Routes — Complete Reference](#10-api-routes--complete-reference)
+11. [Authentication & RBAC](#11-authentication--rbac)
+12. [Infrastructure & Docker](#12-infrastructure--docker)
+13. [Performance & Scalability](#13-performance--scalability)
+14. [Design Decisions & Trade-offs](#14-design-decisions--trade-offs)
 
 ---
 
-## Project Overview
+## 1. System Overview
 
-**AquaFlow** is an industrial SCADA-like platform for drinking water station supervision, built by extending the existing workflow-builder project. It combines:
+AquaFlow is a three-layer system extended with a fourth big-data layer:
 
-- Real-time IoT sensor monitoring
-- Intelligent alerts and anomaly detection
-- Maintenance and intervention management
-- Visual workflow automation builder (existing, enhanced)
-- Analytics and reporting
-- GIS-based station visualization
+```
+Layer 1 — Presentation
+  React 18 SPA  (Reactstrap · Redux Toolkit · Chart.js 2 · JointJS · Leaflet)
 
-**Key Principle**: Preserve the existing workflow builder architecture while extending it into an industrial automation platform.
+Layer 2 — Application
+  NestJS 10 API (TypeORM · Socket.io · MQTT.js · KafkaJS · JWT)
+
+Layer 3 — Data
+  TimescaleDB (primary + time-series)   Redis (cache)
+
+Layer 4 — Big Data
+  Apache Kafka 3.6 (KRaft)  →  MinIO (S3 data lake)
+  PySpark 3.5 (batch + streaming)  →  TimescaleDB sensor_aggregates
+```
+
+### Design principles
+
+- **Preserve, then extend**: the original JointJS workflow builder is kept intact; AquaFlow features are additions, not replacements.
+- **Real-time first**: every sensor reading flows through WebSocket to the browser in under 500 ms.
+- **Graceful degradation**: every backend query has a plain-SQL fallback when TimescaleDB-specific functions are unavailable.
+- **Business language in the UI**: the Analytics dashboard exposes zero technical terms (no "Kafka", "Spark", "consumer").
+- **Modular monolith**: NestJS modules are fully decoupled; future extraction to microservices is straightforward.
 
 ---
 
-## Folder Structure
-
-### Updated Project Tree
+## 2. Folder Structure
 
 ```
 pfe-project/
-├── blocks.js/                              # Reference only
-├── AQUAFLOW_ARCHITECTURE.md               # This document
-├── AQUAFLOW_FOLDER_STRUCTURE.md           # Detailed structure
-├── AQUAFLOW_DATABASE_SCHEMA.sql           # PostgreSQL schema
 │
-├── frontend/
-│   ├── public/
+├── backend/                        NestJS 10 API
 │   ├── src/
-│   │   ├── index.js
-│   │   ├── main.jsx
-│   │   ├── App.jsx
-│   │   ├── routes.js                      # UPDATED: Add module routes
+│   │   ├── main.ts                 Bootstrap, Swagger, CORS, validation pipe
+│   │   ├── app.module.ts           Root module — imports all feature modules
 │   │   │
-│   │   ├── assets/                        # Logos, fonts, images
-│   │   ├── styles/                        # Global CSS (TailwindCSS)
-│   │   │   ├── globals.css
-│   │   │   ├── tailwind.config.js
-│   │   │   └── animations.css
+│   │   ├── auth/                   JWT strategy, refresh tokens, guards
+│   │   ├── users/                  User CRUD, role management
+│   │   ├── stations/               Station CRUD, pagination, search
+│   │   ├── sensors/                Sensor CRUD, cache (Redis 60 s), data ingestion
+│   │   ├── alerts/                 Alert creation, threshold evaluation, lifecycle
+│   │   ├── maintenance/            Intervention lifecycle, technician assignment
+│   │   ├── iot/                    MQTT client, topic routing, payload validation
+│   │   ├── realtime/               Socket.io gateway, room management
+│   │   ├── analytics/              8 endpoints, TimescaleDB + fallback queries
+│   │   ├── reports/                PDF / Excel generation
+│   │   ├── notifications/          In-app + email notification delivery
+│   │   ├── flows/                  Workflow CRUD, execution orchestration
+│   │   ├── execution/              BFS engine + 23 handler classes
+│   │   ├── kafka/                  KafkaConsumerService (reads sensors.anomalies)
+│   │   └── database/
+│   │       ├── entities/           TypeORM entity classes
+│   │       └── migrations/         TypeORM migration files
+│   ├── Dockerfile
+│   └── .env.example
+│
+├── frontend/                       React 18 SPA
+│   ├── src/
+│   │   ├── App.jsx                 Root component, router setup
+│   │   ├── routes.js               All route definitions
 │   │   │
-│   │   ├── components/                    # Reusable UI components
-│   │   │   ├── Blocksidebar/             # Existing workflow builder
-│   │   │   ├── canvas/                   # Existing workflow editor
-│   │   │   ├── nodes/                    # Existing node types
-│   │   │   ├── properties/               # Existing property editors
-│   │   │   ├── builder/                  # Existing builder layout
-│   │   │   ├── Navbars/                  # Existing navigation
-│   │   │   ├── Footers/                  # Existing footers
-│   │   │   ├── Headers/                  # Existing headers
-│   │   │   ├── Sidebar/                  # Existing sidebar
-│   │   │   │
-│   │   │   ├── Common/                   # NEW: Shared components
-│   │   │   │   ├── Button.jsx
-│   │   │   │   ├── Card.jsx
-│   │   │   │   ├── Loading.jsx
-│   │   │   │   ├── Modal.jsx
-│   │   │   │   ├── Alert.jsx
-│   │   │   │   ├── Tabs.jsx
-│   │   │   │   └── Badge.jsx
-│   │   │   │
-│   │   │   ├── DataDisplay/               # NEW: Data visualization
-│   │   │   │   ├── KPICard.jsx
-│   │   │   │   ├── Chart.jsx
-│   │   │   │   ├── Table.jsx
-│   │   │   │   ├── StatCard.jsx
-│   │   │   │   └── StatusBadge.jsx
-│   │   │   │
-│   │   │   ├── Forms/                    # NEW: Form components
-│   │   │   │   ├── FormInput.jsx
-│   │   │   │   ├── FormSelect.jsx
-│   │   │   │   ├── FormCheckbox.jsx
-│   │   │   │   └── FormSubmit.jsx
-│   │   │   │
-│   │   │   └── Layout/                   # NEW: Layout wrappers
-│   │   │       ├── MainLayout.jsx
-│   │   │       ├── AuthLayout.jsx
-│   │   │       └── PageHeader.jsx
+│   │   ├── modules/                Feature modules
+│   │   │   ├── auth/               Login, register, token refresh
+│   │   │   ├── dashboard/          KPI cards, alert feed, overview
+│   │   │   ├── stations/           Station list, form, detail, map
+│   │   │   ├── monitoring/         Live sensor gauges, WebSocket feed
+│   │   │   ├── alerts/             Alert list, acknowledge, history
+│   │   │   ├── maintenance/        Intervention CRUD, timeline
+│   │   │   ├── analytics/          Operator Workbench (4-tab)
+│   │   │   │   ├── pages/
+│   │   │   │   │   └── AnalyticsPage.jsx       Tab shell + header
+│   │   │   │   └── components/
+│   │   │   │       ├── OverviewTab.jsx          Tab 1
+│   │   │   │       ├── AnomaliesTab.jsx         Tab 2
+│   │   │   │       ├── TrendsTab.jsx            Tab 3
+│   │   │   │       └── StationDetailTab.jsx     Tab 4
+│   │   │   ├── reports/            Report builder, export
+│   │   │   ├── iot/                Device management
+│   │   │   ├── automation/         Workflow builder (JointJS)
+│   │   │   └── notifications/      Notification centre
 │   │   │
-│   │   ├── data/                         # Data and constants
-│   │   │   ├── blocks.js                 # UPDATED: Add industrial blocks
-│   │   │   ├── constants.js              # NEW: App constants
-│   │   │   └── mockData.js               # NEW: For development
+│   │   ├── store/                  Redux Toolkit store
+│   │   │   ├── store.js            configureStore
+│   │   │   └── slices/
+│   │   │       ├── authSlice.js
+│   │   │       ├── stationsSlice.js
+│   │   │       ├── sensorsSlice.js
+│   │   │       ├── alertsSlice.js
+│   │   │       ├── maintenanceSlice.js
+│   │   │       ├── analyticsSlice.js   ← 9 thunks, 20+ selectors
+│   │   │       └── realtimeSlice.js
 │   │   │
-│   │   ├── engine/                       # Workflow execution engine (UNCHANGED)
-│   │   │   ├── autosaveManager.js
+│   │   ├── services/               Axios API wrappers
+│   │   │   ├── apiClient.js        Base Axios instance + interceptors
+│   │   │   ├── analyticsService.js
+│   │   │   ├── sensorService.js
+│   │   │   ├── stationService.js
+│   │   │   └── ...
+│   │   │
+│   │   ├── hooks/                  Custom React hooks
+│   │   │   └── useSocket.js        Socket.io connection management
+│   │   │
+│   │   ├── engine/                 Workflow builder client engine
 │   │   │   ├── graphSerializer.js
 │   │   │   ├── graphDeserializer.js
+│   │   │   ├── autosaveManager.js
 │   │   │   └── workflowExecutorClient.js
 │   │   │
-│   │   ├── registry/                     # Block registry (UNCHANGED)
+│   │   ├── registry/               Block registry for the builder
 │   │   │   ├── blockRegistry.js
 │   │   │   └── blockFactory.js
 │   │   │
-│   │   ├── hooks/                        # Custom React hooks
-│   │   │   ├── useWorkflowEditor.js      # Existing
-│   │   │   ├── useJointGraph.js          # Existing
-│   │   │   ├── useAutosave.js            # Existing
-│   │   │   ├── useAuth.js                # NEW: Auth hook
-│   │   │   ├── useSocket.js              # NEW: WebSocket hook
-│   │   │   ├── useFetch.js               # NEW: Data fetching
-│   │   │   ├── useLocalStorage.js        # NEW: Persistent state
-│   │   │   └── useTheme.js               # NEW: Dark mode
-│   │   │
-│   │   ├── services/                     # API clients
-│   │   │   ├── workflowApi.js            # Existing
-│   │   │   ├── authService.js            # NEW
-│   │   │   ├── stationService.js         # NEW
-│   │   │   ├── sensorService.js          # NEW
-│   │   │   ├── alertService.js           # NEW
-│   │   │   ├── maintenanceService.js     # NEW
-│   │   │   └── apiClient.js              # NEW: Axios wrapper
-│   │   │
-│   │   ├── store/                        # Redux state management (NEW)
-│   │   │   ├── store.js                  # Redux configuration
-│   │   │   ├── slices/
-│   │   │   │   ├── authSlice.js
-│   │   │   │   ├── stationsSlice.js
-│   │   │   │   ├── sensorsSlice.js
-│   │   │   │   ├── alertsSlice.js
-│   │   │   │   ├── maintenanceSlice.js
-│   │   │   │   ├── uiSlice.js
-│   │   │   │   └── realtimeSlice.js
-│   │   │   └── hooks.js                  # Custom selector hooks
-│   │   │
-│   │   ├── utils/                        # Utility functions
-│   │   │   ├── graphHelpers.js           # Existing
-│   │   │   ├── nodeHelpers.js            # Existing
-│   │   │   ├── formatters.js             # NEW: Date, number formatting
-│   │   │   ├── validators.js             # NEW: Form validation
-│   │   │   ├── colors.js                 # NEW: Color utilities
-│   │   │   └── constants.js              # NEW: App constants
-│   │   │
-│   │   ├── modules/                      # Feature-based modules (NEW)
-│   │   │   │
-│   │   │   ├── auth/                     # Authentication module
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── LoginPage.jsx
-│   │   │   │   │   └── RegisterPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── LoginForm.jsx
-│   │   │   │   │   ├── RegisterForm.jsx
-│   │   │   │   │   └── ProtectedRoute.jsx
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── dashboard/                # Dashboard module
-│   │   │   │   ├── pages/
-│   │   │   │   │   └── DashboardPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── KPISection.jsx
-│   │   │   │   │   ├── AlertsFeed.jsx
-│   │   │   │   │   ├── StationStatus.jsx
-│   │   │   │   │   ├── ChartSection.jsx
-│   │   │   │   │   ├── EnergyMetrics.jsx
-│   │   │   │   │   └── RealtimeStats.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useDashboardData.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── stations/                 # Station management
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── StationsListPage.jsx
-│   │   │   │   │   ├── StationDetailsPage.jsx
-│   │   │   │   │   ├── CreateStationPage.jsx
-│   │   │   │   │   └── StationAnalyticsPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── StationCard.jsx
-│   │   │   │   │   ├── StationForm.jsx
-│   │   │   │   │   ├── StationEquipments.jsx
-│   │   │   │   │   ├── StationMetrics.jsx
-│   │   │   │   │   └── StationTimeline.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useStations.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── monitoring/               # Real-time monitoring
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── MonitoringPage.jsx
-│   │   │   │   │   └── SensorDetailsPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── SensorGrid.jsx
-│   │   │   │   │   ├── LiveChart.jsx
-│   │   │   │   │   ├── SensorCard.jsx
-│   │   │   │   │   ├── ThresholdAlert.jsx
-│   │   │   │   │   └── RealtimeGauge.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useMonitoringData.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── alerts/                   # Alerts management
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── AlertsPage.jsx
-│   │   │   │   │   └── AlertDetailsPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── AlertList.jsx
-│   │   │   │   │   ├── AlertFilters.jsx
-│   │   │   │   │   ├── AlertCard.jsx
-│   │   │   │   │   ├── AlertTimeline.jsx
-│   │   │   │   │   └── SeverityBadge.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useAlerts.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── maintenance/              # Maintenance module
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── MaintenancePage.jsx
-│   │   │   │   │   ├── InterventionDetailsPage.jsx
-│   │   │   │   │   └── TechnicianAssignmentPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── MaintenanceList.jsx
-│   │   │   │   │   ├── InterventionForm.jsx
-│   │   │   │   │   ├── InterventionCard.jsx
-│   │   │   │   │   ├── TechnicianSelect.jsx
-│   │   │   │   │   ├── MaintenanceHistory.jsx
-│   │   │   │   │   └── StatusTimeline.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useMaintenance.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── map/                      # GIS visualization
-│   │   │   │   ├── pages/
-│   │   │   │   │   └── MapPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── StationMap.jsx
-│   │   │   │   │   ├── MapMarker.jsx
-│   │   │   │   │   ├── StationPopup.jsx
-│   │   │   │   │   ├── MapLegend.jsx
-│   │   │   │   │   └── MapFilters.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useMapData.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── analytics/                # Analytics module
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── AnalyticsPage.jsx
-│   │   │   │   │   ├── TrendAnalysisPage.jsx
-│   │   │   │   │   └── AnomalyDetectionPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── TrendChart.jsx
-│   │   │   │   │   ├── AnomalyAlert.jsx
-│   │   │   │   │   ├── PeriodComparison.jsx
-│   │   │   │   │   ├── PredictiveMetrics.jsx
-│   │   │   │   │   └── OperationalKPI.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useAnalytics.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── reports/                  # Reports module
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── ReportsPage.jsx
-│   │   │   │   │   └── ReportBuilderPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── ReportList.jsx
-│   │   │   │   │   ├── ReportBuilder.jsx
-│   │   │   │   │   ├── ReportExport.jsx
-│   │   │   │   │   └── ReportPreview.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useReports.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── iot/                      # IoT management
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── IoTDevicesPage.jsx
-│   │   │   │   │   └── SensorConfigPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── DeviceList.jsx
-│   │   │   │   │   ├── SensorForm.jsx
-│   │   │   │   │   ├── DeviceCard.jsx
-│   │   │   │   │   └── ConnectionStatus.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useIoT.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── automation/               # Workflow automation (NEW)
-│   │   │   │   ├── pages/
-│   │   │   │   │   ├── AutomationPage.jsx
-│   │   │   │   │   ├── WorkflowListPage.jsx
-│   │   │   │   │   └── WorkflowDetailsPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── WorkflowList.jsx
-│   │   │   │   │   ├── WorkflowBuilder.jsx (reuses existing builder)
-│   │   │   │   │   ├── WorkflowExecution.jsx
-│   │   │   │   │   └── WorkflowLogs.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useAutomation.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   ├── notifications/            # Notifications
-│   │   │   │   ├── pages/
-│   │   │   │   │   └── NotificationsPage.jsx
-│   │   │   │   ├── components/
-│   │   │   │   │   ├── NotificationCenter.jsx
-│   │   │   │   │   ├── NotificationItem.jsx
-│   │   │   │   │   └── PreferencesForm.jsx
-│   │   │   │   ├── hooks/
-│   │   │   │   │   └── useNotifications.js
-│   │   │   │   └── index.js
-│   │   │   │
-│   │   │   └── shared/                   # Shared utilities for modules
-│   │   │       ├── constants/
-│   │   │       ├── hooks/
-│   │   │       ├── utils/
-│   │   │       └── types/
-│   │   │
-│   │   ├── pages/                        # Legacy: page components
-│   │   │   └── BuilderPage.jsx           # Existing workflow builder
-│   │   │
-│   │   ├── layouts/                      # Layout templates
-│   │   │   ├── Admin.js                  # Existing
-│   │   │   └── Auth.js                   # Existing
-│   │   │
-│   │   ├── views/                        # Legacy: view components
-│   │   │   ├── Index.js                  # Existing
-│   │   │   ├── builder/                  # Existing
-│   │   │   └── examples/                 # Existing
-│   │   │
-│   │   ├── variables/                    # Constants (UNCHANGED)
-│   │   │   └── charts.js
-│   │   │
-│   │   └── routes.js                     # UPDATED: Router configuration
+│   │   └── data/
+│   │       └── blocks.js           23 block definitions
 │   │
-│   ├── package.json                      # UPDATED: Add new dependencies
-│   └── .env.example                      # NEW: Environment template
+│   ├── Dockerfile
+│   └── public/
 │
-├── backend/
-│   ├── src/
-│   │   ├── main.ts                       # NestJS entry point
-│   │   ├── app.module.ts                 # UPDATED: Import all modules
-│   │   │
-│   │   ├── common/                       # Shared utilities
-│   │   │   ├── types/
-│   │   │   │   ├── workflow.types.ts    # Existing
-│   │   │   │   ├── api.types.ts         # NEW
-│   │   │   │   └── database.types.ts    # NEW
-│   │   │   ├── decorators/
-│   │   │   │   ├── Roles.decorator.ts   # NEW: Role-based access
-│   │   │   │   └── ApiResponse.decorator.ts # NEW
-│   │   │   ├── guards/
-│   │   │   │   ├── JwtGuard.ts          # NEW
-│   │   │   │   ├── RolesGuard.ts        # NEW
-│   │   │   │   └── OptionalJwtGuard.ts  # NEW
-│   │   │   ├── interceptors/
-│   │   │   │   ├── ResponseInterceptor.ts # NEW
-│   │   │   │   └── ErrorInterceptor.ts   # NEW
-│   │   │   ├── pipes/
-│   │   │   │   ├── ValidationPipe.ts    # NEW
-│   │   │   │   └── ParseIdPipe.ts       # NEW
-│   │   │   ├── filters/
-│   │   │   │   └── HttpExceptionFilter.ts # NEW
-│   │   │   └── exceptions/
-│   │   │       ├── CustomException.ts    # NEW
-│   │   │       └── NotFoundError.ts      # NEW
-│   │   │
-│   │   ├── database/                     # Database layer
-│   │   │   ├── entities/
-│   │   │   │   ├── User.entity.ts       # NEW
-│   │   │   │   ├── Station.entity.ts    # NEW
-│   │   │   │   ├── Sensor.entity.ts     # NEW
-│   │   │   │   ├── SensorData.entity.ts # NEW
-│   │   │   │   ├── Alert.entity.ts      # NEW
-│   │   │   │   ├── Maintenance.entity.ts # NEW
-│   │   │   │   ├── Workflow.entity.ts   # NEW
-│   │   │   │   ├── Notification.entity.ts # NEW
-│   │   │   │   └── flow.schema.ts       # Existing
-│   │   │   ├── migrations/
-│   │   │   │   └── [timestamps]/        # NEW: DB migrations
-│   │   │   ├── seeds/
-│   │   │   │   └── seed.ts              # NEW: Initial data
-│   │   │   ├── database.module.ts       # NEW: TypeORM config
-│   │   │   └── database.service.ts      # NEW: DB utilities
-│   │   │
-│   │   ├── auth/                         # Authentication module (NEW)
-│   │   │   ├── auth.service.ts
-│   │   │   ├── auth.controller.ts
-│   │   │   ├── auth.module.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── login.dto.ts
-│   │   │   │   ├── register.dto.ts
-│   │   │   │   └── refresh-token.dto.ts
-│   │   │   ├── strategies/
-│   │   │   │   ├── jwt.strategy.ts
-│   │   │   │   ├── local.strategy.ts
-│   │   │   │   └── refresh-token.strategy.ts
-│   │   │   └── utils/
-│   │   │       └── password.util.ts
-│   │   │
-│   │   ├── stations/                     # Station management (NEW)
-│   │   │   ├── stations.service.ts
-│   │   │   ├── stations.controller.ts
-│   │   │   ├── stations.module.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── create-station.dto.ts
-│   │   │   │   ├── update-station.dto.ts
-│   │   │   │   └── station-filter.dto.ts
-│   │   │   └── helpers/
-│   │   │       └── station.helpers.ts
-│   │   │
-│   │   ├── sensors/                      # Sensor management (NEW)
-│   │   │   ├── sensors.service.ts
-│   │   │   ├── sensors.controller.ts
-│   │   │   ├── sensors.module.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── create-sensor.dto.ts
-│   │   │   │   └── update-sensor.dto.ts
-│   │   │   └── sensor-data.service.ts
-│   │   │
-│   │   ├── iot/                          # IoT integration (NEW)
-│   │   │   ├── iot.service.ts
-│   │   │   ├── iot.module.ts
-│   │   │   ├── mqtt/
-│   │   │   │   ├── mqtt.client.ts
-│   │   │   │   ├── mqtt.gateway.ts
-│   │   │   │   └── mqtt.config.ts
-│   │   │   ├── handlers/
-│   │   │   │   ├── sensor-message.handler.ts
-│   │   │   │   └── device-event.handler.ts
-│   │   │   └── dto/
-│   │   │       └── mqtt-payload.dto.ts
-│   │   │
-│   │   ├── realtime/                     # WebSocket real-time (NEW)
-│   │   │   ├── realtime.gateway.ts
-│   │   │   ├── realtime.service.ts
-│   │   │   ├── realtime.module.ts
-│   │   │   └── events/
-│   │   │       ├── sensor-update.event.ts
-│   │   │       ├── alert.event.ts
-│   │   │       ├── station-status.event.ts
-│   │   │       └── workflow-event.ts
-│   │   │
-│   │   ├── alerts/                       # Alerts management (NEW)
-│   │   │   ├── alerts.service.ts
-│   │   │   ├── alerts.controller.ts
-│   │   │   ├── alerts.module.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── create-alert.dto.ts
-│   │   │   │   ├── acknowledge-alert.dto.ts
-│   │   │   │   └── alert-filter.dto.ts
-│   │   │   ├── rules/
-│   │   │   │   ├── alert-rule.engine.ts
-│   │   │   │   └── rule.evaluator.ts
-│   │   │   └── processors/
-│   │   │       └── alert.processor.ts
-│   │   │
-│   │   ├── maintenance/                  # Maintenance module (NEW)
-│   │   │   ├── maintenance.service.ts
-│   │   │   ├── maintenance.controller.ts
-│   │   │   ├── maintenance.module.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── create-intervention.dto.ts
-│   │   │   │   ├── update-intervention.dto.ts
-│   │   │   │   └── assign-technician.dto.ts
-│   │   │   └── helpers/
-│   │   │       └── intervention.helpers.ts
-│   │   │
-│   │   ├── reports/                      # Reports generation (NEW)
-│   │   │   ├── reports.service.ts
-│   │   │   ├── reports.controller.ts
-│   │   │   ├── reports.module.ts
-│   │   │   ├── generators/
-│   │   │   │   ├── pdf.generator.ts
-│   │   │   │   ├── excel.generator.ts
-│   │   │   │   └── report.builder.ts
-│   │   │   └── dto/
-│   │   │       └── report-config.dto.ts
-│   │   │
-│   │   ├── analytics/                    # Analytics module (NEW)
-│   │   │   ├── analytics.service.ts
-│   │   │   ├── analytics.controller.ts
-│   │   │   ├── analytics.module.ts
-│   │   │   ├── processors/
-│   │   │   │   ├── trend.processor.ts
-│   │   │   │   ├── anomaly.detector.ts
-│   │   │   │   └── kpi.calculator.ts
-│   │   │   └── dto/
-│   │   │       └── analytics-query.dto.ts
-│   │   │
-│   │   ├── execution/                    # Workflow execution (ENHANCED)
-│   │   │   ├── engine/
-│   │   │   │   ├── execution-context.ts      # Existing
-│   │   │   │   ├── node-executor.ts          # Existing
-│   │   │   │   ├── workflow-runner.ts        # Existing
-│   │   │   │   ├── workflow-context.ts       # NEW: Extended context
-│   │   │   │   └── block-executor.ts         # NEW: Extensible executor
-│   │   │   ├── handlers/
-│   │   │   │   ├── input.handler.ts          # Existing
-│   │   │   │   ├── output.handler.ts         # Existing
-│   │   │   │   ├── action.handler.ts         # Existing
-│   │   │   │   ├── decision.handler.ts       # Existing
-│   │   │   │   ├── sensor-trigger.handler.ts # NEW
-│   │   │   │   ├── threshold-check.handler.ts # NEW
-│   │   │   │   ├── alert-sender.handler.ts  # NEW
-│   │   │   │   ├── maintenance-request.handler.ts # NEW
-│   │   │   │   ├── mqtt-publish.handler.ts  # NEW
-│   │   │   │   ├── email-notification.handler.ts # NEW
-│   │   │   │   ├── sms-notification.handler.ts # NEW
-│   │   │   │   ├── pump-control.handler.ts  # NEW
-│   │   │   │   ├── scheduler.handler.ts      # NEW
-│   │   │   │   ├── station-monitor.handler.ts # NEW
-│   │   │   │   └── analytics-processor.handler.ts # NEW
-│   │   │   ├── execution.module.ts
-│   │   │   └── dto/
-│   │   │       └── handler-execution.dto.ts
-│   │   │
-│   │   ├── flows/                        # Workflow flows (EXISTING)
-│   │   │   ├── flows.module.ts
-│   │   │   ├── flows.service.ts
-│   │   │   ├── flows.controller.ts
-│   │   │   ├── flow-executor.service.ts
-│   │   │   ├── flow-validator.service.ts
-│   │   │   └── dto/
-│   │   │       ├── create-flow.dto.ts
-│   │   │       ├── execute-flow.dto.ts
-│   │   │       └── flow-metadata.dto.ts
-│   │   │
-│   │   └── notifications/                # Notification delivery (NEW)
-│   │       ├── notifications.service.ts
-│   │       ├── notifications.module.ts
-│   │       ├── channels/
-│   │       │   ├── email.channel.ts
-│   │       │   ├── sms.channel.ts
-│   │       │   └── push.channel.ts
-│   │       └── dto/
-│   │           └── send-notification.dto.ts
-│   │
-│   ├── config/                           # Configuration (NEW)
-│   │   ├── database.config.ts
-│   │   ├── jwt.config.ts
-│   │   ├── mqtt.config.ts
-│   │   ├── mail.config.ts
-│   │   └── app.config.ts
-│   │
-│   ├── app.module.ts                     # UPDATED: All modules imported
-│   ├── package.json                      # UPDATED: New dependencies
-│   ├── tsconfig.json
-│   ├── .env.example                      # NEW: Environment template
-│   └── nest-cli.json
+├── data-pipeline/                  Python / PySpark data pipeline
+│   ├── Dockerfile                  kafka-to-minio archiver image
+│   ├── requirements.txt
+│   ├── consumer.py                 Kafka → Parquet → MinIO archiver
+│   └── spark_jobs/
+│       ├── Dockerfile              bitnami/spark:3.5 + S3A JARs
+│       ├── base_job.py             Smoke test (reads MinIO, prints schema)
+│       ├── aggregate_sensor_kpis.py Batch KPI aggregation → TimescaleDB
+│       └── streaming_anomaly_detector.py  Structured streaming z-score
 │
-├── docker-compose.yml                    # NEW: PostgreSQL, Redis, MQTT
-├── .gitignore
-├── README.md                             # UPDATED: Project documentation
-└── DEVELOPMENT.md                        # NEW: Development guide
+├── postgres/
+│   └── init/
+│       ├── 01_extensions.sql       TimescaleDB, uuid-ossp
+│       ├── 02_hypertable.sql       sensor_data hypertable + continuous aggregates
+│       └── 03_sensor_aggregates.sql sensor_aggregates table + indexes
+│
+├── mosquitto/
+│   └── config/mosquitto.conf
+│
+├── docker-compose.yml              Dev — all 13 services
+├── docker-compose.prod.yml         Prod — Nginx reverse proxy, tighter limits
+└── docs/
+    ├── general-blocks-guide.md
+    └── industrial-blocks-guide.md
 ```
 
 ---
 
-## Frontend Architecture
+## 3. Frontend Architecture
 
-### State Management (Redux Toolkit)
+### Module structure
 
-```
-store/
-├── store.js                 # Redux configuration with middleware
-├── slices/
-│   ├── authSlice.js        # { user, token, isAuthenticated, roles }
-│   ├── stationsSlice.js    # { stations, selectedStation, loading }
-│   ├── sensorsSlice.js     # { sensors, sensorData, realtime }
-│   ├── alertsSlice.js      # { alerts, acknowledged, filters }
-│   ├── maintenanceSlice.js # { interventions, technicians, history }
-│   ├── uiSlice.js          # { theme, sidebarOpen, notifications }
-│   └── realtimeSlice.js    # { socket, subscriptions, updates }
-└── hooks.js                # useAppDispatch, useAppSelector, etc.
-```
-
-### Component Hierarchy
+Each feature module follows the same convention:
 
 ```
-App
-├── Router
-│   ├── AuthLayout
-│   │   ├── LoginPage
-│   │   └── RegisterPage
-│   └── MainLayout
-│       ├── Sidebar (Navigation)
-│       ├── TopBar (Header)
-│       └── Main Content
-│           ├── DashboardPage
-│           ├── StationsPage
-│           ├── MonitoringPage
-│           ├── AlertsPage
-│           ├── MaintenancePage
-│           ├── MapPage
-│           ├── AnalyticsPage
-│           ├── ReportsPage
-│           ├── AutomationPage (Workflow Builder)
-│           ├── IoTPage
-│           └── NotificationsPage
+modules/<feature>/
+├── pages/           Route-level components (loaded by React Router)
+├── components/      Presentational sub-components
+├── hooks/           Module-specific hooks (optional)
+└── index.js         Module barrel export
 ```
 
-### Custom Hooks Pattern
+### State management
+
+Redux Toolkit with `createSlice` + `createAsyncThunk`:
+
+```
+store/slices/analyticsSlice.js   ← most complex; 9 thunks, 20+ selectors
+store/slices/alertsSlice.js
+store/slices/authSlice.js
+...
+```
+
+All API calls go through `services/apiClient.js` which:
+- Attaches `Authorization: Bearer <token>` to every request
+- Intercepts 401 → triggers silent refresh → retries once
+- On second 401 → dispatches `logout`
+
+### Chart library constraint
+
+**Chart.js v2.9.4 + react-chartjs-2 v2.11.2** — this is the version in `package.json`.
+
+- Use `cutoutPercentage` not `cutout` (v3 name)
+- Use `scales.xAxes[{}]` arrays, not `scales.x` objects (v3 name)
+- Use `legend` not `plugins.legend` (v3 name)
+- `HorizontalBar` is a separate component (merged into `Bar` with `indexAxis` in v3)
+- Do **not** install or import chart.js v3+ — it will break all charts
+
+### WebSocket integration
+
+`hooks/useSocket.js` manages the Socket.io lifecycle:
+- Connects on mount using the token from `localStorage`
+- Dispatches Redux actions on `sensor-update`, `alert-created`, `workflow-completed`
+- Cleans up on unmount / token expiry
+
+---
+
+## 4. Backend Architecture
+
+### NestJS module map
+
+```
+AppModule
+├── DatabaseModule           TypeORM + TimescaleDB entities
+├── AuthModule               JWT, Passport, refresh token rotation
+├── UsersModule              CRUD, role management
+├── StationsModule           CRUD, pagination, cache
+├── SensorsModule            CRUD, Redis cache (60 s list), data ingestion
+├── AlertsModule             Rule evaluation, lifecycle, history
+├── MaintenanceModule        Intervention CRUD, assignment
+├── IotModule                MQTT.js client, topic routing
+├── RealtimeModule           Socket.io gateway
+├── AnalyticsModule          8 endpoints, dual-query strategy
+├── ReportsModule            PDFMake / ExcelJS
+├── NotificationsModule      In-app + email
+├── FlowsModule              Workflow CRUD + execution
+│   └── ExecutionModule      BFS engine, 23 handlers
+└── KafkaModule              KafkaConsumerService (sensors.anomalies)
+```
+
+### Analytics service — dual-query strategy
+
+Every query that touches TimescaleDB-specific objects has a fallback:
+
+```typescript
+// Pattern used in analytics.service.ts
+try {
+  // Try TimescaleDB continuous aggregate (fast)
+  return await this.dataSource.query(`
+    SELECT time_bucket('1 hour', ...) FROM sensor_data_hourly ...
+  `);
+} catch {
+  // Fall back to plain PostgreSQL (slower but always works)
+  return await this.dataSource.query(`
+    SELECT DATE_TRUNC('hour', timestamp) FROM sensor_data ...
+  `);
+}
+```
+
+This means the application works on plain PostgreSQL too — TimescaleDB just makes it faster.
+
+### KafkaConsumerService
+
+```typescript
+// Subscribes to sensors.anomalies
+// Parses z-score, rollingMean, rollingStddev, value from message
+// Creates an Alert entity with data JSONB = { zScore, rollingMean, rollingStddev, value }
+// Broadcasts via Socket.io → browser shows real-time alert
+```
+
+---
+
+## 5. Database Design
+
+### Entity Relationship
+
+```
+users ──< stations ──< sensors ──< sensor_data   (hypertable)
+                  │         │
+                  └──< alerts ──────────── sensors
+                  │
+                  └──< maintenance
+                  │
+                  └──< workflows ──< workflow_executions
+
+sensors ──< sensor_aggregates   (Spark-computed KPIs)
+users   ──< notifications
+```
+
+### TimescaleDB specifics
+
+```sql
+-- sensor_data is a hypertable (auto time-partitioned by timestamp)
+SELECT create_hypertable('sensor_data', 'timestamp',
+  chunk_time_interval => INTERVAL '1 day');
+
+-- Continuous aggregate: hourly bucket
+CREATE MATERIALIZED VIEW sensor_data_hourly
+  WITH (timescaledb.continuous) AS
+  SELECT
+    time_bucket('1 hour', timestamp)   AS bucket,
+    sensor_id,
+    AVG(value)                         AS avg_value,
+    MIN(value)                         AS min_value,
+    MAX(value)                         AS max_value,
+    STDDEV(value)                      AS stddev_value,
+    COUNT(*)                           AS reading_count
+  FROM sensor_data
+  GROUP BY bucket, sensor_id;
+
+-- Continuous aggregate: daily bucket
+CREATE MATERIALIZED VIEW sensor_data_daily
+  WITH (timescaledb.continuous) AS
+  SELECT time_bucket('1 day', timestamp) AS bucket, ... ;
+```
+
+### sensor_aggregates table (Spark output)
+
+```sql
+CREATE TABLE sensor_aggregates (
+  sensor_id       UUID          NOT NULL,
+  bucket          TIMESTAMPTZ   NOT NULL,
+  granularity     VARCHAR(10)   NOT NULL,   -- 'hourly' | 'daily'
+  station_id      UUID,
+  avg_value       DOUBLE PRECISION,
+  min_value       DOUBLE PRECISION,
+  max_value       DOUBLE PRECISION,
+  stddev_value    DOUBLE PRECISION,
+  reading_count   BIGINT,
+  anomaly_flag    BOOLEAN DEFAULT FALSE,
+  rolling_mean    DOUBLE PRECISION,
+  rolling_stddev  DOUBLE PRECISION,
+  computed_at     TIMESTAMPTZ   NOT NULL,
+  PRIMARY KEY (sensor_id, bucket, granularity)
+);
+CREATE INDEX ON sensor_aggregates (station_id, bucket);
+CREATE INDEX ON sensor_aggregates (sensor_id, granularity, bucket);
+```
+
+### Alert.data JSONB — anomaly payload
+
+When the Spark streaming detector flags an anomaly:
+
+```json
+{
+  "zScore":        3.14,
+  "rollingMean":   4.2,
+  "rollingStddev": 0.8,
+  "value":         6.7
+}
+```
+
+This JSONB is stored in `alerts.data` and surfaced in the Anomaly Detection tab.
+
+---
+
+## 6. Real-Time Architecture
+
+```
+IoT Sensor
+    │ MQTT publish
+    ▼
+Mosquitto broker  (port 1883)
+    │ subscribe sensors/+/data
+    ▼
+NestJS IotModule (MQTT.js client)
+    │ validate payload
+    ├──► SensorsService.updateLastReading()   → sensor_data table
+    ├──► AlertsService.evaluateThresholds()   → create Alert if violated
+    ├──► RealtimeGateway.broadcastSensorUpdate()  → Socket.io rooms
+    └──► KafkaProducer.send('sensors.readings')   → Kafka pipeline
+              │
+              ▼
+    Browser (React)
+    Socket.io 'sensor-update' event
+    → Redux realtimeSlice.sensorUpdate
+    → Live gauge updates, chart appends
+```
+
+Socket.io rooms:
+- `sensor:{id}` — clients watching a specific sensor
+- `station:{id}` — clients watching a station's dashboard
+- `alerts` — all connected clients (alert broadcasts)
+
+---
+
+## 7. Big Data Pipeline
+
+### Full data flow
+
+```
+NestJS Backend
+    │  KafkaJS producer
+    ▼
+Kafka topic: sensors.readings
+    │           │
+    │           └──────────────────────────────────────────┐
+    │                                                      │
+    ▼                                                      ▼
+kafka-to-minio (Python)                     spark-anomaly-detector (PySpark)
+- Batches 500 msgs or 60 s                  - Structured Streaming
+- Writes Parquet to:                        - 5-min sliding window (1-min slide)
+  MinIO raw/sensors/                        - Computes z-score per sensor
+  YYYY/MM/DD/HH/batch_N.parquet            - Flags abs(z) ≥ 2.5
+                                            - Writes JSON to:
+                                              Kafka: sensors.anomalies
+                                                       │
+                                            NestJS KafkaConsumerService
+                                            - Parses anomaly message
+                                            - Creates Alert (type=anomaly)
+                                            - Broadcasts via Socket.io
+
+(periodic / on demand)
+MinIO raw/sensors/
+    │
+    ▼
+aggregate_sensor_kpis.py  (PySpark batch)
+- Reads all Parquet from MinIO
+- Computes per-sensor per-bucket:
+    avg, min, max, stddev, count
+    anomaly_flag (2σ rule)
+    rolling_mean, rolling_stddev
+- Writes results to:
+    MinIO processed/hourly/  (Parquet)
+    MinIO processed/daily/   (Parquet)
+    TimescaleDB sensor_aggregates (UPSERT)
+```
+
+### Kafka topic schema
+
+```json
+// sensors.readings (published by NestJS backend)
+{
+  "sensorId": "uuid",
+  "stationId": "uuid",
+  "value": 4.2,
+  "unit": "bar",
+  "type": "pressure",
+  "timestamp": "2026-06-09T10:00:00.000Z"
+}
+
+// sensors.anomalies (published by spark-anomaly-detector)
+{
+  "sensorId": "uuid",
+  "stationId": "uuid",
+  "windowStart": "2026-06-09T09:55:00.000Z",
+  "windowEnd": "2026-06-09T10:00:00.000Z",
+  "avgValue": 6.7,
+  "rollingMean": 4.2,
+  "rollingStddev": 0.8,
+  "zScore": 3.14,
+  "readingCount": 12
+}
+```
+
+### Spark streaming — anomaly detection logic
+
+```python
+# streaming_anomaly_detector.py — core logic (simplified)
+window_df = (
+    readings_df
+    .withWatermark("timestamp", "2 minutes")
+    .groupBy(
+        window("timestamp", "5 minutes", "1 minute"),
+        "sensorId"
+    )
+    .agg(
+        avg("value").alias("avg_value"),
+        count("value").alias("reading_count"),
+        avg("value").alias("rolling_mean"),
+        stddev("value").alias("rolling_stddev"),
+    )
+)
+
+anomalies = window_df.filter(
+    abs((col("avg_value") - col("rolling_mean")) / col("rolling_stddev")) >= 2.5
+)
+```
+
+---
+
+## 8. Analytics — Operator Workbench
+
+### Architecture
+
+```
+AnalyticsPage.jsx      (tab shell, header KPI cards, freshness banner)
+├── OverviewTab.jsx    (Tab 1)
+├── AnomaliesTab.jsx   (Tab 2)
+├── TrendsTab.jsx      (Tab 3)
+└── StationDetailTab.jsx (Tab 4)
+
+analyticsSlice.js      (Redux slice)
+├── 9 async thunks:
+│   fetchAnalyticsOverview, fetchAnalyticsSensors,
+│   fetchSensorStats, fetchStationStatus,
+│   fetchAnomalyTimeline, fetchNetworkTrend,
+│   fetchDataFreshness, fetchKpis, fetchSystemMetrics
+├── State organised by tab (overview, anomaly, trends, sensorStats)
+└── 20+ selectors exported
+
+analyticsService.js    (Axios wrappers for all 9 endpoints)
+```
+
+### Data flow per tab
+
+**Tab 1 — Overview**
+- On mount: `fetchStationStatus` + `fetchNetworkTrend(6)` + `fetchDataFreshness`
+- `selectStationStatus` → Station Health Grid cards
+- Chart data: doughnuts from station/alert counts; line from `selectNetworkTrend`
+
+**Tab 2 — Anomaly Detection**
+- On tab switch OR period change: `fetchAnomalyTimeline({hours, limit})` + `fetchKpis({granularity, hours})`
+- `selectAnomalyTimeline` → `[{ id, type, severity, createdAt, zScore, station, sensor }]`
+- `selectAnalyticsKpis` → `{ rows: [{sensorId, anomalyFlag, rollingMean, ...}] }`
+
+**Tab 3 — Trends & History**
+- On tab switch OR period change: `fetchNetworkTrend(N)` + `fetchSystemMetrics(N)` + `fetchAnomalyTimeline({hours:N})`
+- Predictive outlook cards computed **client-side** from the three data sources (no ML needed)
+
+**Tab 4 — Station Detail**
+- Station list: `selectStationStatus`
+- Sensor list: `selectAnalyticsSensors` filtered by `sensor.station.id === selectedStationId`
+- Station history: direct `analyticsService.getStationHistory()` call → local state (no Redux thunk needed)
+- Sensor stats: `fetchSensorStats({sensorId, params})` → `selectAnalyticsSensorStats`
+
+### Backend analytics endpoints
+
+```
+GET /analytics/overview
+  → { totalStations, activeSensors, openAlerts, maintenancePending,
+      stationsByStatus, alertsBySeverity }
+
+GET /analytics/station-status
+  → [{ id, name, status, totalSensors, activeSensors, offlineSensors,
+       faultySensors, openAlerts, lastReadingAt }]
+
+GET /analytics/anomaly-timeline?hours=24&limit=100
+  → [{ id, type, severity, status, message, createdAt,
+       zScore, rollingMean, rollingStddev, value,
+       station:{id,name}, sensor:{id,name,unit,type} }]
+
+GET /analytics/network-trend?hours=6
+  → [{ time, avgValue, readingCount }]
+
+GET /analytics/data-freshness
+  → { monitoringActive, lastReadingAt, totalMeasurements, source }
+
+GET /analytics/kpis?granularity=hourly&hours=24
+  → { granularity, windowHours, from, totalBuckets, totalAnomalies,
+      anomalyByStation:{}, rows:[...] }
+
+GET /analytics/system-metrics?hours=24
+  → { windowHours, from, totalReadings, source,
+      topSensors:[{ sensorId, totalReadings, avgValue }] }
+
+GET /analytics/sensors/:id/stats?from&to&granularity
+  → { sensor:{id,name,unit,type,status,minThreshold,maxThreshold,station},
+      period:{from,to,granularity},
+      stats:{avg,min,max,count,stddev},
+      timeSeries:[{time,avg,min,max,stddev,count}] }
+
+GET /analytics/stations/:id/history?from&to&granularity
+  → { station:{id,name,status},
+      period:{from,to,granularity},
+      sensors:[{sensorId,sensorName,unit,buckets:[{time,avg,min,max,stddev,count}]}] }
+```
+
+---
+
+## 9. Workflow Builder Architecture
+
+### Component map
+
+```
+Frontend
+├── BuilderPage.jsx             Main UI: sidebar + canvas + properties panel
+├── hooks/useWorkflowEditor.js  Top-level state (selected node, zoom, etc.)
+├── hooks/useJointGraph.js      JointJS canvas lifecycle
+├── engine/
+│   ├── graphSerializer.js      JointJS graph → JSON (for API save)
+│   ├── graphDeserializer.js    JSON → JointJS graph (on load)
+│   ├── autosaveManager.js      Debounced save to localStorage
+│   └── workflowExecutorClient.js  POST /api/flows/:id/execute
+├── registry/
+│   ├── blockRegistry.js        { type → BlockDefinition } map
+│   └── blockFactory.js         Creates JointJS cells from definitions
+└── data/blocks.js              23 block definitions (575 lines)
+
+Backend
+├── flows/
+│   ├── flows.controller.ts     GET/POST/PUT/DELETE + execute endpoint
+│   ├── flows.service.ts        CRUD, Workflow entity
+│   └── flow-executor.service.ts  Orchestrates BFS execution
+└── execution/
+    ├── engine/
+    │   └── execution-context.ts  Shared state across handlers
+    └── handlers/               One file per block type (23 handlers)
+        ├── sensor-trigger.handler.ts
+        ├── alert-sender.handler.ts
+        ├── maintenance-creator.handler.ts
+        ├── mqtt-publisher.handler.ts
+        └── ... (19 more)
+```
+
+### Execution engine — BFS traversal
+
+```typescript
+// flow-executor.service.ts (simplified)
+async executeWorkflow(workflowId: string, context: ExecutionContext) {
+  const graph = await this.flowsService.getGraph(workflowId);
+  const startNode = graph.nodes.find(n => n.type === 'start');
+
+  const queue = [startNode];
+  while (queue.length) {
+    const node = queue.shift();
+    const handler = this.handlerRegistry.get(node.type);
+    const output = await handler.handle(node, context.getInput(node.id), context);
+    context.setOutput(node.id, output);
+
+    const nextNodes = graph.getSuccessors(node.id);
+    queue.push(...nextNodes);
+  }
+}
+```
+
+### Block definition schema
 
 ```javascript
-// Authentication
-useAuth()           // { user, login, logout, hasRole }
-useProtectedRoute() // Guard navigation
-
-// Data Fetching
-useFetch(url, options)  // { data, loading, error, refetch }
-useStations()           // Redux selector shortcuts
-useAlerts()
-useSensors()
-
-// Real-time
-useSocket()             // { socket, emit, on, off }
-useRealtimeUpdates()    // Subscribe to sensor updates
-
-// UI
-useTheme()              // { theme, toggleTheme }
-useLocalStorage()       // { value, setValue }
-```
-
----
-
-## Backend Architecture
-
-### Module Structure
-
-Each module follows NestJS conventions:
-
-```
-module/
-├── module.controller.ts     # HTTP endpoints
-├── module.service.ts        # Business logic
-├── module.module.ts         # Module definition
-├── dto/
-│   ├── create-module.dto.ts
-│   ├── update-module.dto.ts
-│   └── filter.dto.ts
-└── helpers/
-    └── module.helpers.ts
-```
-
-### Layered Architecture
-
-```
-HTTP Request
-    ↓
-Guard (JWT, Roles)
-    ↓
-Controller (Route handling)
-    ↓
-Service (Business logic)
-    ↓
-Repository/TypeORM (Data access)
-    ↓
-Database
-```
-
-### Dependency Injection
-
-All modules use NestJS dependency injection with proper module imports.
-
----
-
-## Database Schema
-
-### Entity Relationships
-
-```
-User (1) ──────────→ (N) Station
-User (1) ──────────→ (N) Maintenance
-Station (1) ─────────→ (N) Sensor
-Station (1) ─────────→ (N) Alert
-Sensor (1) ──────────→ (N) SensorData
-Sensor (1) ──────────→ (N) Alert
-Alert (1) ──────────→ (N) Notification
-Workflow (1) ────────→ (N) WorkflowExecution
-```
-
-### Key Entities
-
-**User**
-- id, email, password_hash, firstname, lastname
-- role (enum: admin, operator, technician, analyst)
-- created_at, updated_at
-
-**Station**
-- id, name, location, coordinates (lat/long), capacity, type
-- status (enum: normal, warning, critical, offline)
-- description, created_at, updated_at
-
-**Sensor**
-- id, station_id, name, type (pressure, flow, temperature, quality)
-- unit, min_threshold, max_threshold, location
-- last_reading, last_reading_at, created_at
-
-**SensorData**
-- id, sensor_id, value, timestamp, quality_flags
-
-**Alert**
-- id, sensor_id, station_id, type, severity, message
-- status (active, acknowledged, resolved)
-- created_at, acknowledged_at
-
-**Maintenance**
-- id, station_id, type, status, description
-- assigned_to (user_id), created_by, started_at, completed_at
-
-**Workflow**
-- id, name, description, graph (JSON), is_active
-- created_by, created_at, updated_at
-
----
-
-## Workflow Extension Strategy
-
-### Industrial Blocks
-
-New blocks added to `blocks.js`:
-
-1. **sensor-trigger**: Listen to sensor value changes
-2. **threshold-checker**: Validate sensor against min/max
-3. **alert-sender**: Create alerts with message
-4. **maintenance-request**: Trigger maintenance workflow
-5. **mqtt-publisher**: Publish data to MQTT topic
-6. **email-notification**: Send email alerts
-7. **sms-notification**: Send SMS messages
-8. **pump-control**: Send control commands
-9. **analytics-processor**: Calculate metrics
-10. **timer/scheduler**: Delay or schedule actions
-11. **station-monitor**: Monitor station status
-12. **decision**: Route based on conditions (existing, enhanced)
-
-### Execution Handler Pattern
-
-```typescript
-// backend/src/execution/handlers/sensor-trigger.handler.ts
-
-@Injectable()
-export class SensorTriggerHandler implements INodeHandler {
-  handle(node: WorkflowNode, input: any, context: ExecutionContext) {
-    const { sensorId } = node.properties;
-    // Listen to sensor data and trigger workflow
-    return { triggered: true, sensor_id: sensorId };
-  }
+// data/blocks.js — one entry per block type
+{
+  type:        "alert-sender",           // unique identifier
+  title:       "Alert Sender",           // displayed in sidebar
+  icon:        "fa-exclamation-triangle",
+  category:    "Industrial",             // "General" | "Industrial"
+  description: "Creates an alert",
+  color:       "#ef4444",
+  inputs:  [{ id: "in",  label: "Trigger" }],
+  outputs: [{ id: "out", label: "Alert Sent" }],
+  properties: [
+    { name: "severity", label: "Severity", type: "select",
+      options: ["low","medium","high","critical"], defaultValue: "medium" },
+    { name: "message",  label: "Message",  type: "textarea", defaultValue: "" },
+  ],
 }
 ```
 
 ---
 
-## Real-Time Architecture
+## 10. API Routes — Complete Reference
 
-### WebSocket Flow
+### Auth  `POST /api/auth/*`
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/auth/register` | public | Create account |
+| POST | `/auth/login` | public | Get access + refresh tokens |
+| POST | `/auth/refresh` | refresh token | Rotate access token |
+| POST | `/auth/logout` | JWT | Invalidate refresh token |
+| GET | `/auth/me` | JWT | Current user profile |
+
+### Stations  `/api/stations`
+
+| Method | Path | Roles | Description |
+|---|---|---|---|
+| GET | `/stations` | all | Paginated list (`?page&limit&search&status`) |
+| POST | `/stations` | admin, operator | Create |
+| GET | `/stations/:id` | all | Detail with sensors |
+| PUT | `/stations/:id` | admin, operator | Update |
+| DELETE | `/stations/:id` | admin | Delete |
+
+### Sensors  `/api/sensors`
+
+| Method | Path | Roles | Description |
+|---|---|---|---|
+| GET | `/sensors` | all | Paginated (`?stationId&type&status`) |
+| POST | `/sensors` | admin, operator | Create |
+| GET | `/sensors/:id` | all | Detail |
+| PUT | `/sensors/:id` | admin, operator | Update |
+| DELETE | `/sensors/:id` | admin | Delete |
+| GET | `/sensors/:id/data` | all | Raw readings (`?from&to&limit`) |
+| POST | `/sensors/:id/inject` | admin, operator | Inject test reading |
+
+### Alerts  `/api/alerts`
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/alerts` | List (`?severity&status&stationId&limit`) |
+| POST | `/alerts` | Create manually |
+| PATCH | `/alerts/:id/acknowledge` | Acknowledge |
+| PATCH | `/alerts/:id/resolve` | Resolve |
+| DELETE | `/alerts/:id` | Delete |
+
+### Maintenance  `/api/maintenance`
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/maintenance` | List interventions |
+| POST | `/maintenance` | Create intervention |
+| GET | `/maintenance/:id` | Detail |
+| PATCH | `/maintenance/:id` | Update status / notes |
+| PATCH | `/maintenance/:id/assign` | Assign technician |
+
+### Workflows  `/api/flows`
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/flows` | List workflows |
+| POST | `/flows` | Create |
+| GET | `/flows/:id` | Detail with graph JSON |
+| PUT | `/flows/:id` | Update graph |
+| DELETE | `/flows/:id` | Delete |
+| POST | `/flows/:id/execute` | Trigger execution |
+| GET | `/flows/:id/executions` | Execution history |
+
+### Analytics  `/api/analytics`
+
+| Method | Path | Query params |
+|---|---|---|
+| GET | `/analytics/overview` | — |
+| GET | `/analytics/station-status` | — |
+| GET | `/analytics/anomaly-timeline` | `hours` `limit` |
+| GET | `/analytics/network-trend` | `hours` |
+| GET | `/analytics/data-freshness` | — |
+| GET | `/analytics/kpis` | `granularity` `hours` |
+| GET | `/analytics/system-metrics` | `hours` |
+| GET | `/analytics/sensors/:id/stats` | `from` `to` `granularity` |
+| GET | `/analytics/stations/:id/history` | `from` `to` `granularity` |
+| GET | `/analytics/pipeline/stats` | — |
+
+---
+
+## 11. Authentication & RBAC
+
+### Token flow
 
 ```
-Frontend (Socket.io Client)
-    ↓
-NestJS Gateway (Socket.io Adapter)
-    ↓
-RealtimeService (Event broadcasting)
-    ↓
-IoT Module (Sensor data) / Alerts Service / Maintenance Service
-    ↓
-Event Emission
-    ↓
-Frontend (Real-time update)
+POST /auth/login
+  → { access_token (JWT 1h), refresh_token (JWT 7d) }
+
+Frontend: stores both in memory / localStorage
+On 401: POST /auth/refresh → new access_token (transparent to user)
+On second 401: logout + redirect to /login
 ```
 
-### Events
+### JWT payload
 
-**sensor-update**
 ```json
-{ "sensorId": "123", "value": 50.5, "timestamp": "2024-01-01T00:00:00Z" }
+{ "sub": "user-uuid", "email": "user@example.com", "role": "operator", "iat": 0, "exp": 0 }
 ```
 
-**alert-created**
-```json
-{ "alertId": "456", "severity": "high", "message": "Pressure critical" }
-```
+### Role matrix
 
-**maintenance-status-changed**
-```json
-{ "maintenanceId": "789", "status": "in-progress", "assignedTo": "user123" }
-```
+| Endpoint group | admin | operator | technician | analyst |
+|---|---|---|---|---|
+| Auth (own profile) | ✅ | ✅ | ✅ | ✅ |
+| Stations (read) | ✅ | ✅ | ✅ | ✅ |
+| Stations (write) | ✅ | ✅ | — | — |
+| Sensors (read) | ✅ | ✅ | ✅ | ✅ |
+| Sensors (write) | ✅ | ✅ | — | — |
+| Alerts (read) | ✅ | ✅ | ✅ | ✅ |
+| Alerts (acknowledge) | ✅ | ✅ | ✅ | — |
+| Maintenance (read) | ✅ | ✅ | ✅ | ✅ |
+| Maintenance (create) | ✅ | ✅ | — | — |
+| Maintenance (update own) | ✅ | ✅ | ✅ | — |
+| Analytics (read) | ✅ | ✅ | ✅ | ✅ |
+| Workflows (execute) | ✅ | ✅ | — | — |
+| User management | ✅ | — | — | — |
 
 ---
 
-## API Routes
+## 12. Infrastructure & Docker
 
-### Authentication
-- `POST /api/auth/register` - Register user
-- `POST /api/auth/login` - Login
-- `POST /api/auth/refresh` - Refresh token
-- `POST /api/auth/logout` - Logout
+### Service dependency graph
 
-### Stations
-- `GET /api/stations` - List stations
-- `POST /api/stations` - Create station
-- `GET /api/stations/:id` - Get station details
-- `PUT /api/stations/:id` - Update station
-- `DELETE /api/stations/:id` - Delete station
-- `GET /api/stations/:id/analytics` - Station analytics
+```
+postgres (healthy)
+redis    (healthy)
+mosquitto (healthy)
+kafka    (healthy)   ← depends on nothing (KRaft, standalone)
+minio    (healthy)
+    │
+minio-init (completes) ← creates bucket structure
+    │
+backend (healthy)    ← depends on all 5 above
+    │
+kafka-to-minio       ← depends on kafka + minio-init
+spark-master         ← depends on minio
+spark-worker         ← depends on spark-master
+spark-anomaly        ← depends on spark-master + spark-worker + kafka
+frontend             ← depends on backend
+```
 
-### Sensors
-- `GET /api/sensors` - List sensors
-- `POST /api/sensors` - Create sensor
-- `GET /api/sensors/:id` - Get sensor details
-- `PUT /api/sensors/:id` - Update sensor
-- `GET /api/sensors/:id/data` - Get sensor readings
+### Health checks
 
-### Alerts
-- `GET /api/alerts` - List alerts
-- `POST /api/alerts` - Create alert (trigger)
-- `GET /api/alerts/:id` - Get alert details
-- `PATCH /api/alerts/:id/acknowledge` - Acknowledge alert
-- `DELETE /api/alerts/:id` - Clear alert
+| Service | Health check command | Interval |
+|---|---|---|
+| postgres | `pg_isready -U postgres` | 10 s |
+| redis | `redis-cli ping` | 10 s |
+| mosquitto | `mosquitto_pub -h localhost -t health/check -m ok` | 10 s |
+| kafka | `kafka-topics.sh --bootstrap-server localhost:9092 --list` | 15 s |
+| minio | `curl -sf http://localhost:9000/minio/health/live` | 15 s |
+| backend | `wget -qO- http://localhost:3001/api/health` | 30 s |
 
-### Maintenance
-- `GET /api/maintenance` - List interventions
-- `POST /api/maintenance` - Create intervention
-- `GET /api/maintenance/:id` - Get intervention details
-- `PATCH /api/maintenance/:id` - Update status
-- `PATCH /api/maintenance/:id/assign` - Assign technician
+### Production docker-compose differences
 
-### Workflows
-- `GET /api/workflows` - List workflows
-- `POST /api/workflows` - Create workflow
-- `GET /api/workflows/:id` - Get workflow
-- `PUT /api/workflows/:id` - Update workflow
-- `POST /api/workflows/:id/execute` - Execute workflow
-- `GET /api/workflows/:id/executions` - Get execution history
-
-### Analytics
-- `GET /api/analytics/trends` - Trend analysis
-- `GET /api/analytics/anomalies` - Anomaly detection
-- `GET /api/analytics/kpis` - Operational KPIs
-
-### Reports
-- `GET /api/reports` - List reports
-- `POST /api/reports/generate` - Generate new report
-- `GET /api/reports/:id/pdf` - Download PDF
-- `GET /api/reports/:id/excel` - Download Excel
+`docker-compose.prod.yml` adds / changes:
+- Nginx reverse proxy (80/443) in front of frontend and backend
+- `SPARK_WORKER_MEMORY=4G` and `SPARK_WORKER_CORES=4`
+- `NODE_ENV=production` → TypeORM `synchronize: false`
+- Volumes bind to named volumes instead of local paths
+- Secrets loaded from Docker secrets instead of plain env vars
 
 ---
 
-## Authentication & RBAC
+## 13. Performance & Scalability
 
-### JWT Flow
+### Current performance targets (development)
 
-```
-Login Endpoint
-    ↓
-Verify Credentials
-    ↓
-Generate JWT + Refresh Token
-    ↓
-Client Stores Tokens
-    ↓
-Request with JWT in Authorization Header
-    ↓
-JwtGuard Validates
-    ↓
-RolesGuard Checks Permissions
-    ↓
-Access Granted
-```
+| Metric | Target |
+|---|---|
+| Dashboard initial load | < 2 s |
+| REST API response (p95) | < 100 ms |
+| WebSocket sensor update latency | < 500 ms |
+| TimescaleDB hourly aggregate query | < 20 ms |
+| Raw `sensor_data` query (no aggregate) | < 100 ms |
 
-### Decorator Usage
+### Bottlenecks and mitigations
 
-```typescript
-@Controller('protected')
-export class ProtectedController {
-  
-  @Get()
-  @UseGuards(JwtGuard, RolesGuard)
-  @Roles('admin', 'operator')
-  getSomething() {
-    // Only admin and operator can access
-  }
-}
-```
+| Bottleneck | Mitigation |
+|---|---|
+| Sensor list queries repeated per user | Redis cache 60 s (SensorsService) |
+| `sensor_data` table grows unbounded | TimescaleDB auto-compression (configurable) |
+| Analytics queries on large datasets | Continuous aggregates (`sensor_data_hourly`) |
+| Kafka consumer lag | kafka-to-minio batches 500 msgs or 60 s, whichever first |
+| Spark job resource pressure | Worker memory configurable via compose env |
 
-### Roles
+### Horizontal scaling path
 
-- **Admin**: Full access, user management, system configuration
-- **Operator**: Dashboard, monitoring, acknowledge alerts
-- **Technician**: Maintenance, intervention records, equipment status
-- **Analyst**: Analytics, reports, read-only access
+- **Backend**: stateless NestJS — add instances behind Nginx upstream
+- **WebSocket**: sticky sessions or Redis adapter for Socket.io
+- **Kafka**: add partitions (default: 3)
+- **Spark**: add worker containers
 
 ---
 
-## Integration Patterns
+## 14. Design Decisions & Trade-offs
 
-### How Modules Work Together
+### TimescaleDB over plain PostgreSQL
+- **Pro**: `time_bucket()` is 10–100× faster than `DATE_TRUNC` on large time-series; continuous aggregates maintained automatically
+- **Con**: adds a DB extension dependency
+- **Mitigation**: every query has a plain-SQL `DATE_TRUNC` fallback
 
-**Workflow + Alerts + Maintenance**
-```
-1. Workflow triggers on sensor-threshold event
-2. Decision node evaluates: Is pressure > max?
-3. If true → alert-sender block creates alert
-4. Same workflow → maintenance-request creates intervention
-5. Alerts service broadcasts to frontend via WebSocket
-6. Frontend updates alerts feed in real-time
-```
+### Kafka over direct DB writes
+- **Pro**: decouples IoT ingestion from analytics; replay-able; multiple consumers
+- **Con**: adds operational complexity (Kafka, kafka-to-minio)
+- **Mitigation**: KRaft mode (no Zookeeper); single-node fine for ≤ 10 000 msg/s
 
-**IoT + Realtime + Analytics**
-```
-1. MQTT broker sends sensor data to backend
-2. IoT module receives and validates
-3. Sensor service saves to database
-4. Realtime gateway broadcasts via WebSocket
-5. Analytics module aggregates for trends
-6. Dashboard receives and displays live charts
-```
+### MinIO (S3) as data lake
+- **Pro**: immutable raw data archive; Spark reads Parquet directly from S3A
+- **Con**: another stateful service to manage
+- **Trade-off accepted**: enables future ML training on historical data
 
-**Automation + Notifications**
-```
-1. Workflow execution completes
-2. Notification handler formats message
-3. Notification service enqueues delivery
-4. Email/SMS channel sends via external service
-5. Delivery log recorded in database
-6. User receives notification
-```
+### Chart.js v2 (not v3)
+- **Reason**: the existing project already had react-chartjs-2 v2.11.2; upgrading is a breaking change affecting all chart configurations
+- **Impact**: `HorizontalBar` is a separate component; `scales.xAxes[]` array syntax; `cutoutPercentage` not `cutout`
+- **Decision**: stay on v2 for stability; upgrade is a separate future task
+
+### Redux for analytics (not React Query)
+- **Reason**: analytics data is shared across the 4-tab UI; server-state cache would be per-component
+- **Trade-off**: more boilerplate slice code vs. simpler cache invalidation
+
+### JointJS for workflow canvas (preserved from original)
+- **Reason**: existing working implementation; re-writing in React Flow would be a large risk
+- **Impact**: JointJS is a class-based library — must be used in non-React lifecycle hooks
 
 ---
 
-## Configuration Files
-
-### Environment Variables (.env)
-
-```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/aquaflow
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_NAME=aquaflow
-DATABASE_USER=postgres
-DATABASE_PASSWORD=postgres
-
-# JWT
-JWT_SECRET=your-secret-key-here
-JWT_EXPIRATION=3600
-
-# MQTT
-MQTT_BROKER_URL=mqtt://localhost:1883
-MQTT_USERNAME=user
-MQTT_PASSWORD=pass
-
-# Socket.io
-SOCKET_PORT=3001
-
-# Mail (optional)
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USER=your-email@gmail.com
-MAIL_PASS=app-password
-
-# Frontend API
-REACT_APP_API_URL=http://localhost:3000/api
-REACT_APP_WS_URL=ws://localhost:3001
-```
-
-### Docker Compose (postgres, redis, mqtt)
-
-Includes services for local development with PostgreSQL, Redis (caching), and Mosquitto MQTT.
-
----
-
-## Development Workflow
-
-### Adding a New Feature
-
-1. **Define Entity** in `backend/src/database/entities/`
-2. **Create Migration** with TypeORM
-3. **Create Module** with Service + Controller
-4. **Implement DTOs** for validation
-5. **Create Redux Slice** in frontend
-6. **Build UI Components** in appropriate module
-7. **Implement API Client** in services
-8. **Add Custom Hooks** for data fetching
-9. **Update Routes** if needed
-10. **Test** with API and Frontend
-
-### Extending Workflows
-
-1. Add block definition to `frontend/src/data/blocks.js`
-2. Create handler in `backend/src/execution/handlers/`
-3. Register handler in execution module
-4. Test with workflow builder
-5. Document in workflow examples
-
----
-
-## Next Steps
-
-This architecture document provides the complete structure. The implementation will follow in phases with actual code files, database schemas, and example implementations for each major module.
-
+*Last updated: 2026-06-09 · AquaFlow v2.0*

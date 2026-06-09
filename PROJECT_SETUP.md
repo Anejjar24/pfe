@@ -1,702 +1,609 @@
-# AquaFlow: Project Setup Guide
+# AquaFlow — Developer Setup Guide
 
-## Overview
-
-This guide provides step-by-step instructions to set up the development environment and prepare the project for Phase 1 implementation.
-
----
-
-## Prerequisites
-
-### System Requirements
-- **Node.js**: 18.x or higher
-- **npm**: 9.x or higher
-- **Docker**: 20.10+
-- **Docker Compose**: 2.x+
-- **Git**: Latest version
-- **RAM**: Minimum 4GB (8GB recommended)
-- **Disk Space**: Minimum 5GB free
-
-### Verify Prerequisites
-
-```powershell
-# Check Node.js version
-node --version
-
-# Check npm version
-npm --version
-
-# Check Docker version
-docker --version
-
-# Check Docker Compose version
-docker-compose --version
-
-# Check Git version
-git --version
-```
+> Complete instructions to set up your local development environment from scratch.  
+> Covers Windows, macOS, and Linux.
 
 ---
 
-## Step 1: Initial Project Preparation
+## Table of Contents
 
-### 1.1 Initialize Git (if not already done)
-
-```powershell
-cd C:\Users\DELL\Downloads\pfe-project
-
-# Initialize git repository
-git init
-
-# Create .gitignore
-@"
-# Dependencies
-node_modules/
-package-lock.json
-yarn.lock
-
-# Build artifacts
-build/
-dist/
-backend/dist/
-frontend/build/
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-
-# Database
-*.sqlite
-*.sqlite3
-
-# Docker
-.docker/
-
-# Cache
-.cache/
-.eslintcache
-
-# Testing
-coverage/
-.nyc_output/
-"@ | Out-File -Encoding UTF8 -FilePath ".gitignore"
-
-# Add files
-git add .
-git commit -m "Initial AquaFlow project setup
-
-Co-Authored-By: Oz <oz-agent@warp.dev>"
-```
-
-### 1.2 Create Directory Structure
-
-```powershell
-# Create backend directories
-New-Item -ItemType Directory -Path "backend/src/database/entities" -Force
-New-Item -ItemType Directory -Path "backend/src/database/migrations" -Force
-New-Item -ItemType Directory -Path "backend/src/database/seeds" -Force
-New-Item -ItemType Directory -Path "backend/src/common/types" -Force
-New-Item -ItemType Directory -Path "backend/src/common/guards" -Force
-New-Item -ItemType Directory -Path "backend/src/common/decorators" -Force
-New-Item -ItemType Directory -Path "backend/src/auth/strategies" -Force
-New-Item -ItemType Directory -Path "backend/src/auth/dto" -Force
-New-Item -ItemType Directory -Path "backend/config" -Force
-
-# Create frontend directories
-New-Item -ItemType Directory -Path "frontend/src/modules" -Force
-New-Item -ItemType Directory -Path "frontend/src/store/slices" -Force
-New-Item -ItemType Directory -Path "frontend/src/components/Common" -Force
-New-Item -ItemType Directory -Path "frontend/src/components/DataDisplay" -Force
-New-Item -ItemType Directory -Path "frontend/src/components/Forms" -Force
-New-Item -ItemType Directory -Path "frontend/src/components/Layout" -Force
-New-Item -ItemType Directory -Path "frontend/src/styles" -Force
-```
+1. [System requirements](#1-system-requirements)
+2. [Install prerequisites](#2-install-prerequisites)
+3. [Clone and configure](#3-clone-and-configure)
+4. [Start infrastructure with Docker](#4-start-infrastructure-with-docker)
+5. [Run backend in dev mode](#5-run-backend-in-dev-mode)
+6. [Run frontend in dev mode](#6-run-frontend-in-dev-mode)
+7. [Verify the full stack](#7-verify-the-full-stack)
+8. [IDE setup (VS Code)](#8-ide-setup-vs-code)
+9. [Git workflow](#9-git-workflow)
+10. [Environment variables reference](#10-environment-variables-reference)
+11. [Common setup errors](#11-common-setup-errors)
 
 ---
 
-## Step 2: Backend Setup
+## 1. System requirements
 
-### 2.1 Install Backend Dependencies
+| Resource | Minimum | Recommended |
+|---|---|---|
+| CPU | 4 cores | 8 cores |
+| RAM | 8 GB | 16 GB (Spark needs ~2 GB alone) |
+| Disk | 10 GB free | 20 GB free |
+| OS | Windows 10/11, macOS 12+, Ubuntu 20.04+ | |
 
-```powershell
-cd backend
+> **Windows**: Docker Desktop must use the **WSL 2** backend (not Hyper-V). Enable it in Docker Desktop → Settings → General → "Use WSL 2 based engine".
 
-# Install production dependencies
-npm install @nestjs/common@^10.4.15
-npm install @nestjs/core@^10.4.15
-npm install @nestjs/platform-express@^10.4.15
-npm install @nestjs/websockets@^10.4.15
-npm install @nestjs/platform-socket.io@^10.4.15
-npm install @nestjs/jwt@^11.0.0
-npm install @nestjs/passport@^10.0.3
-npm install typeorm@^0.3.17
-npm install pg@^8.11.3
-npm install mqtt@^5.3.1
-npm install bcrypt@^5.1.1
-npm install passport-jwt@^4.0.1
-npm install class-validator@^0.14.1
-npm install class-transformer@^0.5.1
-npm install reflect-metadata@^0.2.2
-npm install rxjs@^7.8.1
+---
 
-# Install dev dependencies
-npm install -D typescript@^5.7.2
-npm install -D @types/node@^20.17.10
-npm install -D @types/bcrypt@^5.0.2
-npm install -D @nestjs/cli@^10.4.9
-npm install -D @nestjs/schematics@^10.2.3
-npm install -D eslint@^8.56.0
-npm install -D @typescript-eslint/eslint-plugin@^6.19.1
-npm install -D @typescript-eslint/parser@^6.19.1
+## 2. Install prerequisites
 
-cd ..
+### 2.1 Node.js 18+
+
+```bash
+# Using nvm (recommended — lets you switch versions easily)
+# Linux / macOS:
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install 18
+nvm use 18
+
+# Windows — use nvm-windows:
+# https://github.com/coreybutler/nvm-windows/releases
+nvm install 18.20.0
+nvm use 18.20.0
 ```
 
-### 2.2 Create Backend Configuration Files
-
-**backend/tsconfig.json**:
-```json
-{
-  "compilerOptions": {
-    "module": "commonjs",
-    "target": "ES2021",
-    "lib": ["ES2021"],
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "moduleResolution": "node"
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
-}
+Verify:
+```bash
+node --version   # v18.x.x
+npm --version    # 9.x.x or higher
 ```
 
-### 2.3 Create Environment File
+### 2.2 Docker Desktop
 
-**backend/.env**:
+- **Windows / macOS**: download from https://www.docker.com/products/docker-desktop
+- **Ubuntu**:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Verify:
+```bash
+docker --version          # Docker version 24.x or higher
+docker compose version    # Docker Compose version v2.x
+```
+
+### 2.3 Git
+
+```bash
+# Ubuntu
+sudo apt install git
+
+# macOS
+brew install git
+
+# Windows — download from https://git-scm.com/download/win
+```
+
+### 2.4 Optional tools (highly recommended)
+
+| Tool | Purpose | Install |
+|---|---|---|
+| **MQTT Explorer** | Browse MQTT topics visually | https://mqtt-explorer.com |
+| **DBeaver** | PostgreSQL / TimescaleDB GUI | https://dbeaver.io |
+| **Offset Explorer** | Browse Kafka topics | https://www.kafkatool.com |
+| **Python 3.10+** | Run Spark jobs locally | https://python.org |
+| **pipenv** or **venv** | Python environment | `pip install pipenv` |
+
+---
+
+## 3. Clone and configure
+
+```bash
+# Clone the repository
+git clone <repo-url> pfe-project
+cd pfe-project
+```
+
+### 3.1 Backend environment
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Open `backend/.env` and **at minimum change**:
+
 ```env
-# Database
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_NAME=aquaflow
-DATABASE_USER=postgres
-DATABASE_PASSWORD=postgres
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/aquaflow
+JWT_SECRET=replace-this-with-at-least-32-random-characters
+JWT_REFRESH_SECRET=replace-this-with-another-32-random-characters
+```
 
-# JWT
-JWT_SECRET=your-development-secret-key-change-in-production
-JWT_EXPIRATION=3600
-JWT_REFRESH_SECRET=your-refresh-secret-key
-JWT_REFRESH_EXPIRATION=604800
+All other values work out of the box with the Docker setup.
 
-# MQTT
-MQTT_BROKER_URL=mqtt://localhost:1883
-MQTT_USERNAME=admin
-MQTT_PASSWORD=password
-MQTT_PROTOCOL=mqtt
-MQTT_PORT=1883
+Full reference: see [Section 10](#10-environment-variables-reference).
 
-# Server
-PORT=3000
-NODE_ENV=development
+### 3.2 Frontend environment
 
-# Frontend
-FRONTEND_URL=http://localhost:3000
+For local development (backend on port 3001), **no `.env` file is needed** — defaults are baked in.
 
-# Socket.io
-SOCKET_PORT=3001
+If you want to override:
 
-# Mail (optional)
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USER=your-email@gmail.com
-MAIL_PASS=your-app-password
-MAIL_FROM=noreply@aquaflow.local
+```bash
+# frontend/.env  (optional)
+REACT_APP_API_URL=http://localhost:3001/api
+REACT_APP_WS_URL=http://localhost:3001
 ```
 
 ---
 
-## Step 3: Frontend Setup
+## 4. Start infrastructure with Docker
 
-### 3.1 Install Frontend Dependencies
-
-```powershell
-cd frontend
-
-# Install core dependencies
-npm install react@18.2.0
-npm install react-dom@18.2.0
-npm install react-router-dom@6.21.1
-
-# Install state management
-npm install @reduxjs/toolkit@1.9.7
-npm install react-redux@8.1.3
-
-# Install styling
-npm install tailwindcss@3.4.1
-npm install -D postcss@8.4.32
-npm install -D autoprefixer@10.4.17
-
-# Install UI/Chart libraries
-npm install recharts@2.10.4
-npm install framer-motion@10.16.16
-npm install react-leaflet@4.2.3
-npm install leaflet@1.9.4
-
-# Install real-time
-npm install socket.io-client@4.7.2
-
-# Install HTTP client
-npm install axios@1.6.4
-
-# Install forms & validation
-npm install react-hook-form@7.50.0
-npm install zod@3.22.4
-
-# Install dev dependencies
-npm install -D @types/react@18.2.43
-npm install -D @types/react-dom@18.2.17
-npm install -D vite@5.0.8
-npm install -D @vitejs/plugin-react@4.2.1
-
-cd ..
+```bash
+# From the project root
+docker compose up -d
 ```
 
-### 3.2 Create Frontend Environment File
+This starts all 13 services. First pull takes a few minutes (images ~5 GB total).
 
-**frontend/.env**:
-```env
-REACT_APP_API_URL=http://localhost:3000/api
-REACT_APP_WS_URL=ws://localhost:3001
-REACT_APP_ENVIRONMENT=development
+### Monitor startup
+
+```bash
+# Watch all container statuses
+watch docker compose ps
+
+# Or follow logs from a specific service
+docker compose logs -f backend
+docker compose logs -f kafka
 ```
 
-### 3.3 Configure TailwindCSS
+### Expected healthy state (~60 seconds)
 
-**frontend/tailwind.config.js**:
-```javascript
-module.exports = {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,jsx,ts,tsx}",
-  ],
-  theme: {
-    extend: {
-      colors: {
-        primary: '#3b82f6',
-        secondary: '#0f766e',
-      },
-    },
-  },
-  plugins: [],
-}
+```
+NAME                         STATUS
+aquaflow-postgres            Up (healthy)
+aquaflow-redis               Up (healthy)
+aquaflow-mosquitto           Up (healthy)
+aquaflow-kafka               Up (healthy)
+aquaflow-minio               Up (healthy)
+aquaflow-minio-init          Exited (0)      ← correct — one-shot init
+aquaflow-backend             Up (healthy)
+aquaflow-kafka-to-minio      Up
+aquaflow-spark-master        Up
+aquaflow-spark-worker        Up
+aquaflow-spark-anomaly       Up
+aquaflow-frontend            Up
+```
+
+### Useful Docker commands
+
+```bash
+# Stop all services (keeps data volumes)
+docker compose stop
+
+# Start again
+docker compose start
+
+# Full reset — DELETES ALL DATA
+docker compose down -v
+
+# Rebuild backend image after code changes (for full Docker mode)
+docker compose build backend
+docker compose up -d backend
+
+# View Spark worker logs
+docker compose logs -f spark-worker
+
+# Execute a command inside a container
+docker exec -it aquaflow-postgres psql -U postgres -d aquaflow
+docker exec -it aquaflow-kafka kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
 
 ---
 
-## Step 4: Docker Setup
+## 5. Run backend in dev mode
 
-### 4.1 Create Docker Compose File
+Running the backend outside Docker gives you **hot reload** (saves ~5 s per change).
 
-**docker-compose.yml**:
-```yaml
-version: '3.8'
+```bash
+# Stop the Docker backend first
+docker compose stop backend
 
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: aquaflow_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: aquaflow
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - aquaflow
-
-  redis:
-    image: redis:7-alpine
-    container_name: aquaflow_redis
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - aquaflow
-
-  mosquitto:
-    image: eclipse-mosquitto:latest
-    container_name: aquaflow_mqtt
-    ports:
-      - '1883:1883'
-      - '9001:9001'
-    volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_logs:/mosquitto/log
-    environment:
-      - MOSQUITTO_USERNAME=admin
-      - MOSQUITTO_PASSWORD=password
-    healthcheck:
-      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-t", "$SYS/#", "-C", "1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - aquaflow
-
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  mosquitto_data:
-    driver: local
-  mosquitto_logs:
-    driver: local
-
-networks:
-  aquaflow:
-    driver: bridge
-```
-
-### 4.2 Start Docker Services
-
-```powershell
-# Navigate to project root
-cd C:\Users\DELL\Downloads\pfe-project
-
-# Start services
-docker-compose up -d
-
-# Verify services are running
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-
-# Stop services (when needed)
-# docker-compose down
-```
-
----
-
-## Step 5: Verify Setup
-
-### 5.1 Test Backend Installation
-
-```powershell
 cd backend
+npm install
 
-# Test TypeScript compilation
-npx tsc --version
-
-# Verify NestJS CLI
-npx @nestjs/cli@latest --version
-
-cd ..
-```
-
-### 5.2 Test Frontend Installation
-
-```powershell
-cd frontend
-
-# Verify React installation
-npm list react
-
-# Verify Node version compatibility
-node --version
-
-cd ..
-```
-
-### 5.3 Test Database Connection
-
-```powershell
-# Test PostgreSQL connection
-docker-compose exec postgres psql -U postgres -d aquaflow -c "SELECT version();"
-
-# Test Redis connection
-docker-compose exec redis redis-cli ping
-
-# Test MQTT connection
-# Use an MQTT client tool or subscribe to test topic
-docker-compose exec mosquitto mosquitto_sub -h localhost -t test/topic
-```
-
----
-
-## Step 6: Start Development Servers
-
-### 6.1 Terminal 1: Backend
-
-```powershell
-cd backend
+# Start with hot reload
 npm run start:dev
 ```
 
-### 6.2 Terminal 2: Frontend
+Backend is available at **http://localhost:3001/api**  
+Swagger docs at **http://localhost:3001/api/docs**
 
-```powershell
+### Backend NPM scripts
+
+| Command | Description |
+|---|---|
+| `npm run start:dev` | Hot reload dev server |
+| `npm run start:debug` | Dev server + Node.js debugger |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run start:prod` | Run compiled production build |
+| `npm test` | Run all Jest unit tests |
+| `npm run test:cov` | Tests + coverage report |
+| `npm run test:e2e` | End-to-end tests |
+| `npm run lint` | ESLint check |
+| `npm run typeorm migration:run` | Apply pending migrations |
+| `npm run typeorm migration:generate -- -n Name` | Generate migration from entity changes |
+
+> **Note**: when running backend outside Docker, the `.env` `DATABASE_HOST`, `REDIS_HOST`, `KAFKA_BROKERS`, and `MINIO_ENDPOINT` must all point to `localhost` (the default values in `.env.example` are already set this way for dev mode).
+
+---
+
+## 6. Run frontend in dev mode
+
+```bash
+# Stop the Docker frontend first
+docker compose stop frontend
+
 cd frontend
+npm install
+
+# Start Create React App dev server
 npm start
 ```
 
-### 6.3 Access Application
+Frontend is available at **http://localhost:3000**
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:3000/api
-- **WebSocket**: ws://localhost:3001
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
-- **MQTT Broker**: localhost:1883
+React dev server proxies `/api` requests to the backend automatically (configured in `package.json` → `"proxy"`).
 
----
+### Frontend NPM scripts
 
-## Step 7: Initial Data Setup
+| Command | Description |
+|---|---|
+| `npm start` | Dev server with hot reload |
+| `npm test` | Jest + React Testing Library |
+| `npm run build` | Production build to `build/` |
+| `npm run lint` | ESLint check |
 
-### 7.1 Create Database Seed Script
+### Chart.js version — important
 
-**backend/src/database/seeds/seed.ts**:
-```typescript
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../../app.module';
+The project uses **Chart.js v2.9.4** with **react-chartjs-2 v2.11.2**.
 
-async function seed() {
-  const app = await NestFactory.createApplicationContext(AppModule);
-  
-  // TODO: Add seeding logic here
-  // Create default users, stations, sensors, etc.
-  
-  await app.close();
-}
+Do **not** run `npm install chart.js` or `npm install react-chartjs-2` without pinning to v2:
 
-seed()
-  .then(() => console.log('Database seeded successfully'))
-  .catch((error) => {
-    console.error('Seeding failed:', error);
-    process.exit(1);
-  });
+```bash
+# Safe — these are already in package.json
+# DO NOT upgrade to v3 — it breaks all chart configurations
 ```
 
-### 7.2 Add Seed Script to package.json
-
-```json
-{
-  "scripts": {
-    "seed": "ts-node src/database/seeds/seed.ts"
-  }
-}
+If you accidentally upgrade, rollback with:
+```bash
+npm install chart.js@2.9.4 react-chartjs-2@2.11.2
 ```
 
 ---
 
-## Step 8: IDE Configuration
+## 7. Verify the full stack
 
-### 8.1 VS Code Extensions (Recommended)
+Run through these checks to confirm everything is wired up correctly.
 
-- ES7+ React/Redux/React-Native snippets
-- Prettier - Code formatter
-- ESLint
-- Thunder Client (for API testing)
-- Docker
+### 7.1 Backend health
 
-### 8.2 VS Code Settings
+```bash
+curl http://localhost:3001/api/health
+# Expected: {"status":"ok","info":{...}}
+```
 
-**backend/.vscode/settings.json**:
+### 7.2 Database
+
+```bash
+docker exec -it aquaflow-postgres psql -U postgres -d aquaflow -c "\dt"
+# Expected: list of tables (users, stations, sensors, alerts, ...)
+```
+
+### 7.3 TimescaleDB extension
+
+```bash
+docker exec -it aquaflow-postgres psql -U postgres -d aquaflow \
+  -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
+# Expected: timescaledb | 2.14.x
+```
+
+### 7.4 Kafka topics
+
+```bash
+docker exec aquaflow-kafka \
+  kafka-topics.sh --bootstrap-server localhost:9092 --list
+# Expected: sensors.readings  sensors.anomalies  (may be auto-created on first use)
+```
+
+### 7.5 MinIO bucket
+
+Open **http://localhost:9002** → login `aquaflow / aquaflow123` → verify `aquaflow-lake` bucket with `raw/`, `processed/`, `models/` folders.
+
+### 7.6 Spark cluster
+
+Open **http://localhost:8080** → verify 1 worker connected, status: ALIVE.
+
+### 7.7 Register and login
+
+```bash
+# Register
+curl -X POST http://localhost:3001/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@aquaflow.io","password":"Admin1234!","firstname":"Admin","lastname":"User"}'
+
+# Login
+curl -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@aquaflow.io","password":"Admin1234!"}'
+# Expected: {"access_token":"eyJ...","refresh_token":"eyJ...","user":{...}}
+```
+
+### 7.8 Send a test sensor reading
+
+```bash
+# First create a station + sensor via the UI or API (see QUICK_START.md)
+# Then publish via MQTT:
+docker exec aquaflow-mosquitto \
+  mosquitto_pub -h localhost -p 1883 \
+  -t "sensors/<sensor-uuid>/data" \
+  -m '{"value":4.2}'
+```
+
+Check the Dashboard → the sensor's last reading should update within 1 second.
+
+---
+
+## 8. IDE setup (VS Code)
+
+### Recommended extensions
+
 ```json
+// .vscode/extensions.json
 {
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "firsttris.vscode-jest-runner",
+    "ms-azuretools.vscode-docker",
+    "rangav.vscode-thunder-client",
+    "redhat.vscode-yaml",
+    "bradlc.vscode-tailwindcss"
+  ]
+}
+```
+
+### Workspace settings
+
+```json
+// .vscode/settings.json
+{
   "editor.formatOnSave": true,
-  "[typescript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  },
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "jest.autoRun": "off"
 }
 ```
 
----
+### Debug configuration
 
-## Troubleshooting
-
-### Port Already in Use
-
-```powershell
-# Find process using port 3000 (backend)
-Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess
-
-# Find process using port 3001 (frontend)
-Get-NetTCPConnection -LocalPort 3001 | Select-Object OwningProcess
-
-# Kill process (replace PID with actual process ID)
-Stop-Process -Id <PID> -Force
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug NestJS",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/backend/dist/**/*.js"]
+    }
+  ]
+}
 ```
 
-### Docker Issues
-
-```powershell
-# Check Docker daemon
-docker info
-
-# Rebuild containers
-docker-compose down
-docker-compose up -d --build
-
-# View container logs
-docker-compose logs <service-name>
-
-# Connect to container
-docker-compose exec <service-name> sh
-```
-
-### Dependencies Installation Fails
-
-```powershell
-# Clear npm cache
-npm cache clean --force
-
-# Delete node_modules and reinstall
-rm -r node_modules package-lock.json
-npm install
-```
-
-### Database Connection Error
-
-```powershell
-# Check if PostgreSQL is running
-docker-compose ps postgres
-
-# Verify connection string
-docker-compose exec postgres psql -U postgres -c "\l"
-
-# Check environment variables
-cat backend/.env | grep DATABASE
-```
+Start debug mode with: `npm run start:debug` in the backend directory, then attach VS Code.
 
 ---
 
-## Next Steps
+## 9. Git workflow
 
-After completing setup:
+### Branches
 
-1. ✅ Verify all services are running
-2. ✅ Test database connectivity
-3. ✅ Review AQUAFLOW_ARCHITECTURE.md
-4. ✅ Create initial TypeORM entities
-5. ✅ Implement authentication module (Phase 1)
-6. ✅ Follow IMPLEMENTATION_ROADMAP.md Phase 1 tasks
-
----
-
-## Development Workflow
-
-### Daily Development
-
-```powershell
-# 1. Start Docker services
-docker-compose up -d
-
-# 2. Start backend development server
-cd backend && npm run start:dev
-
-# 3. In another terminal, start frontend
-cd frontend && npm start
-
-# 4. Access application
-# Frontend: http://localhost:3000
-# API: http://localhost:3000/api
+```
+main          ← stable, production-ready
+develop       ← integration branch
+feature/*     ← new features
+fix/*         ← bug fixes
+hotfix/*      ← critical production fixes
 ```
 
-### Making Changes
+### Commit message format
 
-```powershell
-# Frontend changes: Auto-reload with npm start
-# Backend changes: Auto-reload with npm run start:dev
-# Database schema: Create migration, run with npm run typeorm migration:run
+```
+<type>(<scope>): <short description>
 
-# Commit changes
-git add .
-git commit -m "feat: description
+<longer description if needed>
 
-Co-Authored-By: Oz <oz-agent@warp.dev>"
+Co-Authored-By: Your Name <your@email.com>
 ```
 
-### Stopping Development
+Types: `feat` · `fix` · `refactor` · `test` · `docs` · `chore`
 
-```powershell
-# Stop development servers (Ctrl+C in each terminal)
+Scopes: `backend` · `frontend` · `analytics` · `pipeline` · `workflow` · `infra`
 
-# Stop Docker services
-docker-compose down
+Examples:
+```
+feat(analytics): add Station Detail tab with sensor min/max band chart
+fix(backend): add DATE_TRUNC fallback when time_bucket() unavailable
+docs: update QUICK_START with Spark job instructions
+```
 
-# Optional: Remove volumes to reset database
-# docker-compose down -v
+### Pre-push checklist
+
+```bash
+# Backend
+cd backend && npm test && npm run lint
+
+# Frontend
+cd frontend && npm test -- --watchAll=false && npm run lint
+
+# Docker — make sure nothing is broken
+docker compose up -d && sleep 30 && docker compose ps
 ```
 
 ---
 
-## Performance Tips
+## 10. Environment variables reference
 
-- Use Redux DevTools for state debugging
-- Monitor API response times in browser Network tab
-- Check Docker container resource usage: `docker stats`
-- Use browser Performance tab for frontend optimization
-- Monitor database queries with TypeORM logging enabled
+### `backend/.env`
+
+```env
+# ── Database (TimescaleDB on Docker = timescale/timescaledb:2.14.2-pg15) ─────
+DATABASE_HOST=localhost          # → postgres  in Docker network
+DATABASE_PORT=5432
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_NAME=aquaflow
+
+# ── JWT ───────────────────────────────────────────────────────────────────────
+JWT_SECRET=change-me-at-least-32-chars-xxxxxxxxxxxxxxxx
+JWT_REFRESH_SECRET=change-me-refresh-32-chars-xxxxxxxxx
+JWT_EXPIRATION=3600              # access token lifetime in seconds (1 h)
+JWT_REFRESH_EXPIRATION=604800   # refresh token lifetime in seconds (7 d)
+
+# ── Server ────────────────────────────────────────────────────────────────────
+PORT=3001
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3000
+
+# ── Redis ────────────────────────────────────────────────────────────────────
+REDIS_HOST=localhost             # → redis  in Docker network
+REDIS_PORT=6379
+
+# ── MQTT (Eclipse Mosquitto) ─────────────────────────────────────────────────
+MQTT_BROKER_URL=mqtt://localhost:1883   # → mqtt://mosquitto:1883  in Docker
+
+# ── Apache Kafka 3.6 (KRaft, no Zookeeper) ──────────────────────────────────
+KAFKA_BROKERS=localhost:9092     # → kafka:9092  in Docker network
+
+# ── MinIO (S3-compatible data lake) ─────────────────────────────────────────
+MINIO_ENDPOINT=http://localhost:9000    # → http://minio:9000  in Docker
+MINIO_ACCESS_KEY=aquaflow
+MINIO_SECRET_KEY=aquaflow123
+MINIO_BUCKET=aquaflow-lake
+
+# ── Email (optional) ─────────────────────────────────────────────────────────
+# MAIL_HOST=smtp.gmail.com
+# MAIL_PORT=587
+# MAIL_USER=your@gmail.com
+# MAIL_PASS=your-app-password
+```
+
+### `frontend/.env` (optional — only needed to override defaults)
+
+```env
+REACT_APP_API_URL=http://localhost:3001/api
+REACT_APP_WS_URL=http://localhost:3001
+```
 
 ---
 
-## Security Notes (Development Only)
+## 11. Common setup errors
 
-- ⚠️ Change JWT_SECRET before production
-- ⚠️ Change MQTT credentials before production
-- ⚠️ Never commit .env files
-- ⚠️ Use HTTPS in production
-- ⚠️ Enable CORS only for trusted domains in production
+### `Error: Cannot find module '@nestjs/core'`
+```bash
+cd backend && rm -rf node_modules && npm install
+```
+
+### `Error: ECONNREFUSED 127.0.0.1:5432` (backend can't reach DB)
+```bash
+# Check postgres container is healthy
+docker compose ps postgres
+# If not running:
+docker compose up -d postgres
+# If running but backend is in dev mode: ensure DATABASE_HOST=localhost in .env
+```
+
+### Kafka `LEADER_NOT_AVAILABLE` on first start
+```bash
+docker compose restart kafka
+# Wait 20 seconds then retry
+```
+
+### `minio-init` container shows exit code 1
+```bash
+# Re-run the init manually
+docker compose run --rm minio-init
+```
+
+### `time_bucket does not exist` SQL error
+The TimescaleDB extension was not loaded. Check:
+```bash
+docker exec aquaflow-postgres psql -U postgres -d aquaflow \
+  -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+```
+The `postgres/init/01_extensions.sql` file should have done this automatically on first boot.
+
+### Frontend blank page after `npm start`
+1. Open browser DevTools → Console
+2. Check for `401 Unauthorized` → token expired, log in again
+3. Check for `Network Error` → backend not running or wrong `REACT_APP_API_URL`
+4. Check for `Chart is not a constructor` → Chart.js version mismatch
+
+### Spark worker shows `DEAD` in UI
+```bash
+docker compose restart spark-worker
+# If still dead, check memory:
+docker stats aquaflow-spark-worker
+# Increase memory in docker-compose.yml: SPARK_WORKER_MEMORY=2G
+```
+
+### Port already in use
+```bash
+# Find what is using port 3001
+# Windows:
+netstat -ano | findstr :3001
+# Linux / macOS:
+lsof -i :3001
+
+# Kill the process or stop the Docker container:
+docker compose stop backend
+```
 
 ---
 
-## Getting Help
+## Service quick-reference card
 
-- Review QUICK_START.md for code examples
-- Check AQUAFLOW_ARCHITECTURE.md for design patterns
-- Review backend/src/ structure in ARCHITECTURE.md
-- Check docker-compose logs for service errors
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  AquaFlow Local Services                                        │
+├─────────────────────┬──────────────────────────────────────────┤
+│  Frontend (UI)      │  http://localhost:3000                    │
+│  Backend API        │  http://localhost:3001/api                │
+│  Swagger docs       │  http://localhost:3001/api/docs           │
+│  MinIO console      │  http://localhost:9002                    │
+│                     │  user: aquaflow / pass: aquaflow123        │
+│  Spark master UI    │  http://localhost:8080                    │
+├─────────────────────┼──────────────────────────────────────────┤
+│  PostgreSQL/TSB     │  localhost:5432                           │
+│                     │  user: postgres / pass: postgres          │
+│                     │  db: aquaflow                             │
+│  Redis              │  localhost:6379                           │
+│  MQTT               │  localhost:1883                           │
+│  Kafka              │  localhost:9092                           │
+│  MinIO S3 API       │  localhost:9000                           │
+│  Spark master       │  localhost:7077                           │
+└─────────────────────┴──────────────────────────────────────────┘
+```
 
+---
+
+*Last updated: 2026-06-09 · AquaFlow v2.0*

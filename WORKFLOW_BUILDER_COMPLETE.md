@@ -11,12 +11,16 @@
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | NestJS 10, TypeORM, PostgreSQL 15 |
-| Frontend | React 18, Redux Toolkit, JointJS |
-| Real-time | Socket.IO |
-| IoT | MQTT via Eclipse Mosquitto |
+| Backend | NestJS 10, TypeORM, TimescaleDB (PostgreSQL 15) |
+| Frontend | React 18, Redux Toolkit, Reactstrap, JointJS |
+| Real-time | Socket.IO 4 |
+| IoT | MQTT via Eclipse Mosquitto 2 |
 | Cache | Redis 7 |
-| Auth | JWT + RBAC |
+| Auth | JWT + RBAC (admin · operator · technician · analyst) |
+| Event streaming | Apache Kafka 3.6 (KRaft — no Zookeeper) |
+| Data lake | MinIO (S3-compatible object storage) |
+| Big data | Apache Spark 3.5 (PySpark — batch + structured streaming) |
+| Charts | Chart.js **v2.9.4** + react-chartjs-2 **v2.11.2** |
 
 ---
 
